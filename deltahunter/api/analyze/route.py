@@ -29,7 +29,28 @@ CIRCUITS = {
             {"name": "Variante Alta", "start": 3150, "end": 3500},
             {"name": "Rivazza 1 & 2", "start": 3900, "end": 4500},
         ],
-    }
+    },
+    "sepang": {
+        "name": "Sepang International Circuit",
+        "length": 5475,
+        "sectors": [
+            {"name": "T1", "start": 400, "end": 640},
+            {"name": "T2", "start": 640, "end": 760},
+            {"name": "T3", "start": 760, "end": 900},
+            {"name": "T4", "start": 900, "end": 1080},
+            {"name": "T5 Hairpin", "start": 1350, "end": 1650},
+            {"name": "T6", "start": 1650, "end": 1870},
+            {"name": "T7", "start": 1870, "end": 2080},
+            {"name": "T8", "start": 2080, "end": 2300},
+            {"name": "T9", "start": 2300, "end": 2580},
+            {"name": "T10", "start": 2580, "end": 2760},
+            {"name": "T11", "start": 2900, "end": 3220},
+            {"name": "T12", "start": 3300, "end": 3560},
+            {"name": "T13", "start": 3650, "end": 3870},
+            {"name": "T14", "start": 3900, "end": 4260},
+            {"name": "T15", "start": 4850, "end": 5200},
+        ],
+    },
 }
 
 
@@ -215,58 +236,61 @@ def extract_best_lap(channels: dict):
         dist_freq = speed_freq
         print(f"[DEBUG] Computed distance: total={dist_data[-1]:.1f}m")
 
-    # --- Compute lap numbers from distance resets if no lap channel ---
-    if lap_data is None and dist_data is not None:
-        print("[DEBUG] No lap number channel found, detecting from distance resets")
-        lap_data = np.zeros(len(dist_data), dtype=np.float64)
-        lap_freq = dist_freq
-        current_lap = 0
-        for i in range(1, len(dist_data)):
-            if dist_data[i] < dist_data[i - 1] - 50:  # distance reset = new lap
-                current_lap += 1
-            lap_data[i] = current_lap
+    if dist_data is None:
+        raise ValueError("Missing essential channels (could not determine distance)")
 
-    if lap_data is None or dist_data is None:
-        raise ValueError("Missing essential channels (could not determine lap or distance)")
+    # --- Detect lap boundaries ---
+    # Priority: 1) distance resets, 2) Lap Time channel resets, 3) Session Lap Count changes
+    # The "Lap Number" channel in AC/Telemetrick counts *completed* laps,
+    # so it stays at 0 for the entire first lap.  Distance resets and Lap Time
+    # resets are the reliable signals.
+    print(f"[DEBUG] Resolved: dist_freq={dist_freq}, speed_freq={speed_freq}")
+    print(f"[DEBUG] Samples: dist={len(dist_data)}, speed={len(speed_data)}")
 
-    print(f"[DEBUG] Resolved: lap_freq={lap_freq}, dist_freq={dist_freq}, speed_freq={speed_freq}")
-    print(f"[DEBUG] Samples: lap={len(lap_data)}, dist={len(dist_data)}, speed={len(speed_data)}")
+    # 1) Try distance resets (works when Lap Distance channel exists)
+    resets = [0]
+    for i in range(1, len(dist_data)):
+        if dist_data[i] < dist_data[i - 1] - 50:
+            resets.append(i)
 
-    # Resample all channels to the speed channel frequency (highest usually)
-    base_freq = speed_freq if speed_freq > 0 else 20
+    # 2) If no distance resets, try Lap Time channel resets
+    if len(resets) <= 1:
+        lt_data, lt_freq = get_channel_data(channels, "lap", "time")
+        if lt_data is not None and lt_freq > 0:
+            resets = [0]
+            # Convert Lap Time indices to dist_data indices
+            for i in range(1, len(lt_data)):
+                if lt_data[i] < lt_data[i - 1] - 1.0:
+                    # Map from lt_data index to dist_data index
+                    di = int(i * dist_freq / lt_freq)
+                    if di > 0 and di < len(dist_data):
+                        resets.append(di)
+            if len(resets) > 1:
+                print(f"[DEBUG] Using Lap Time resets for lap boundaries")
 
-    # Find lap boundaries
+    # 3) If still no splits, try Session Lap Count / Lap Number changes
+    if len(resets) <= 1 and lap_data is not None:
+        resets = [0]
+        for i in range(1, len(lap_data)):
+            if lap_data[i] != lap_data[i - 1]:
+                di = int(i * dist_freq / lap_freq)
+                if di > 0 and di < len(dist_data):
+                    resets.append(di)
+        if len(resets) > 1:
+            print(f"[DEBUG] Using Lap Number changes for lap boundaries")
+
     laps = {}
-    for i in range(len(lap_data)):
-        ln = int(lap_data[i])
-        if ln not in laps:
-            laps[ln] = {"start": i, "end": i, "freq": lap_freq}
-        laps[ln]["end"] = i
+    lap_freq = dist_freq
+    for idx in range(len(resets)):
+        s = resets[idx]
+        # The reset sample belongs to the NEXT lap, so end one sample before it
+        e = (resets[idx + 1] - 1) if idx + 1 < len(resets) else len(dist_data) - 1
+        laps[idx] = {"start": s, "end": e, "freq": lap_freq}
 
-    print(f"[DEBUG] Found {len(laps)} unique lap numbers: {sorted(laps.keys())[:20]}")
+    print(f"[DEBUG] Split into {len(laps)} laps by resets at samples {resets}")
 
     if len(laps) == 0:
         raise ValueError("No laps detected in telemetry data")
-
-    # If only 1 "lap" found, try to split by distance resets
-    if len(laps) <= 1:
-        print("[DEBUG] Only 1 lap number found, trying to split by distance resets")
-        laps = {}
-        current_lap = 0
-        lap_start = 0
-        for i in range(1, len(dist_data)):
-            # Distance resets = new lap
-            if dist_data[i] < dist_data[i - 1] - 50:
-                di = int(i * lap_freq / dist_freq)
-                ds = int(lap_start * lap_freq / dist_freq)
-                laps[current_lap] = {"start": ds, "end": di, "freq": lap_freq}
-                current_lap += 1
-                lap_start = i
-        # Add last lap
-        di = int((len(dist_data) - 1) * lap_freq / dist_freq)
-        ds = int(lap_start * lap_freq / dist_freq)
-        laps[current_lap] = {"start": ds, "end": di, "freq": lap_freq}
-        print(f"[DEBUG] Split into {len(laps)} laps by distance resets")
 
     # Calculate lap distances using peak distance within each lap segment
     # (handles distance resets that occur at lap boundaries)

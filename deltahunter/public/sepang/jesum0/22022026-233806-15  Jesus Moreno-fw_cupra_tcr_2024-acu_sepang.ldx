@@ -1,0 +1,86 @@
+<?xml version="1.0" ?>
+<LDXFile locale="English_United Kingdom.1252" DefaultLocale="C" Version="1.6">
+  <Layers>
+    <Layer>
+      <MarkerBlock>
+        <MarkerGroup Name="Beacons" Index="1">
+          <Marker Version="100" ClassName="BCN" Name="Manual.1" Flags="77" Time="2.393916e+07"/>
+          <Marker Version="100" ClassName="BCN" Name="Manual.2" Flags="77" Time="1.678842e+08"/>
+        </MarkerGroup>
+      </MarkerBlock>
+    </Layer>
+    <Details>
+      <String Id="Total Laps" Value="3"/>
+      <String Id="Fastest Time" Value="2:23.945"/>
+      <String Id="Fastest Lap" Value="2"/>
+      <Numeric Id="Vehicle Wheelbase" Value="2.715" Unit="m" DPS="3"/>
+      <Numeric Id="Vehicle Track" Value="1.693" Unit="m" DPS="3"/>
+      <Numeric Id="Vehicle COG" Value="0.6" Unit="%" DPS="3"/>
+      <Numeric Id="Venue Length" Value="5475.1298828125" Unit="m" DPS="6"/>
+      <String Id="Venue Category" Value="" Unit="" DPS=""/>
+      <Numeric Id="Fuel Tank Capacity" Value="100" Unit="l" DPS="2"/>
+      <Numeric Id="Vehicle Weight" Value="1255" Unit="kg" DPS="2"/>
+      <Numeric Id="Tyre Consumption Rate" Value="0" Unit="" DPS="2"/>
+      <Numeric Id="Fuel Consumption Rate" Value="0" Unit="" DPS="2"/>
+      <Numeric Id="Ballast" Value="0" Unit="kg" DPS="1"/>
+      <Numeric Id="Restrictor" Value="0" Unit="%" DPS="1"/>
+      <String Id="InputMode" Value="Wheel" Unit="" DPS=""/>
+      <String Id="AppName" Value="Telemetrick v1.72" Unit="" DPS=""/>
+      <Numeric Id="Gear 1" Value="2.333300113678" Unit="" DPS="2"/>
+      <Numeric Id="Gear 2" Value="1.7691999673843" Unit="" DPS="2"/>
+      <Numeric Id="Gear 3" Value="1.4090000391006" Unit="" DPS="2"/>
+      <Numeric Id="Gear 4" Value="1.1427999734879" Unit="" DPS="2"/>
+      <Numeric Id="Gear 5" Value="0.96149998903275" Unit="" DPS="2"/>
+      <Numeric Id="Gear 6" Value="0.82749998569489" Unit="" DPS="2"/>
+      <Numeric Id="Diff Ratio" Value="3.7999999523163" Unit="" DPS="2"/>
+      <String Id="Sky" Value="Clear" Unit="" DPS="0"/>
+      <String Id="Weather Comment" Value="SkyOcclusion: 1.000, rainIntensity: 0.000" Unit="" DPS="0"/>
+      <Numeric Id="Baro Pressure" Value="1.0131" Unit="bar" DPS="4"/>
+      <Numeric Id="Rel Humidity" Value="50.00" Unit="%" DPS="2"/>
+      <String Id="Vehicle Desc" Value="Cupra by Fuzo's Workshop, Cupra Leon Competición 2024, year: 2020 version: 1.2" Unit="" DPS="0"/>
+      <Numeric Id="Gear 7" Value="0" Unit="" DPS="2"/>
+      <Numeric Id="Gear 8" Value="0" Unit="" DPS="2"/>
+      <Numeric Id="Gear 9" Value="0" Unit="" DPS="2"/>
+      <Numeric Id="Gear 10" Value="0" Unit="" DPS="2"/>
+    </Details>
+  </Layers>
+  <Maths Id="Local" Flags="1208">
+    <MathEnumerations>
+      <MathEnumeration Name="Tyres Available">
+        <Enum Name="Kumho TCR Dry (S)" Value="0"/>
+        <Enum Name="Kumho TCR Wet (WET)" Value="1"/>
+      </MathEnumeration>
+    </MathEnumerations>
+    <MathItems>
+      <MathExpression Id="FFB Mult" Interpolate="0" Script="1"/>
+      <MathExpression Id="FFB Base" Interpolate="0" Script="1"/>
+      <MathExpression Id="Max Fuel" Interpolate="0" Unit="l" DisplayUnit="l" Script="100"/>
+      <MathExpression Id="Max rpm" Interpolate="0" Unit="rpm" DisplayUnit="rpm" Script="7000"/>
+      <MathExpression Id="Max KERS KJ" Interpolate="0" Unit="KJ" DisplayUnit="KJ" Script="0"/>
+      <MathExpression Id="Max ERS per lap" Interpolate="0" Unit="KJ" DisplayUnit="KJ" Script="0"/>
+      <MathExpression Id="Max Turbo Boost" Interpolate="0" Unit="KJ" DisplayUnit="KJ" Script="2.6"/>
+      <MathExpression Id="ABS Present" Interpolate="0" Script="0"/>
+      <MathExpression Id="TC Present" Interpolate="0" Script="0"/>
+      <MathExpression Id="TC2 Present" Interpolate="0" Script="0"/>
+      <MathExpression Id="Auto Shift" Interpolate="0" Script="0"/>
+      <MathExpression Id="Auto Clutch" Interpolate="0" Script="0"/>
+      <MathExpression Id="allowedTyresOut" Interpolate="0" Script="2"/>
+      <MathExpression Id="Max ICE Power" Interpolate="0" Unit="hp" DisplayUnit="hp" Script="352.08168318313"/>
+      <MathExpression Id="Max ICE Torque" Interpolate="0" Unit="Nm" DisplayUnit="Nm" Script="421.08823529412"/>
+      <MathExpression Id="Damper THLD Bump F" Interpolate="0" Unit="mm/s" DisplayUnit="mm/s" Script="30"/>
+      <MathExpression Id="Damper THLD Rebound F" Interpolate="0" Unit="mm/s" DisplayUnit="mm/s" Script="30"/>
+      <MathExpression Id="Damper THLD Bump R" Interpolate="0" Unit="mm/s" DisplayUnit="mm/s" Script="30"/>
+      <MathExpression Id="Damper THLD Rebound R" Interpolate="0" Unit="mm/s" DisplayUnit="mm/s" Script="30"/>
+      <MathExpression Id="Damper THLD Bump HF" Interpolate="0" Unit="mm/s" DisplayUnit="mm/s" Script="99.99"/>
+      <MathExpression Id="Damper THLD Rebound HF" Interpolate="0" Unit="mm/s" DisplayUnit="mm/s" Script="99.99"/>
+      <MathExpression Id="Damper THLD Bump HR" Interpolate="0" Unit="mm/s" DisplayUnit="mm/s" Script="99.99"/>
+      <MathExpression Id="Damper THLD Rebound HR" Interpolate="0" Unit="mm/s" DisplayUnit="mm/s" Script="99.99"/>
+      <MathExpression Id="bumpStop Gap F" Interpolate="0" Unit="mm" DisplayUnit="mm" Script="108"/>
+      <MathExpression Id="bumpStop Gap R" Interpolate="0" Unit="mm" DisplayUnit="mm" Script="98"/>
+      <MathExpression Id="bumpStop Gap HF" Interpolate="0" Unit="mm" DisplayUnit="mm" Script="0"/>
+      <MathExpression Id="bumpStop Gap HR" Interpolate="0" Unit="mm" DisplayUnit="mm" Script="0"/>
+      <MathExpression Id="FFB Steer Assist" Interpolate="0" Script="0.0010000000474975"/>
+      <MathExpression Id="Tyres" Interpolate="0" Unit="" DisplayUnit="" Script="'Tyres Compound' []" EnumerationName="Tyres Available" DisplayDPS="0"/>
+    </MathItems>
+  </Maths>
+</LDXFile>
