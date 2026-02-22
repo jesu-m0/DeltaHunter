@@ -18,6 +18,17 @@ export default function RacingLineMap({ hd, sector, showUser, showRef }: Props) 
   const containerRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
 
+  // Zoom & pan state
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
+
+  // Reset zoom when sector changes
+  useEffect(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, [sector.id]);
+
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
@@ -66,13 +77,16 @@ export default function RacingLineMap({ hd, sector, showUser, showRef }: Props) 
     const pad = 60;
     const scaleX = (w - pad * 2) / rangeX;
     const scaleY = (h - pad * 2) / rangeY;
-    const scale = Math.min(scaleX, scaleY);
-    const offX = (w - rangeX * scale) / 2;
-    const offY = (h - rangeY * scale) / 2;
+    const baseScale = Math.min(scaleX, scaleY);
+    const scale = baseScale * zoom;
+    const centerX = w / 2 + pan.x;
+    const centerY = h / 2 + pan.y;
+    const dataCenterX = (minX + maxX) / 2;
+    const dataCenterY = (minY + maxY) / 2;
 
     const toScreen = (x: number, y: number): [number, number] => [
-      offX + (x - minX) * scale,
-      offY + (maxY - y) * scale,
+      centerX + (x - dataCenterX) * scale,
+      centerY - (y - dataCenterY) * scale,
     ];
 
     // Speed range for coloring
@@ -86,7 +100,7 @@ export default function RacingLineMap({ hd, sector, showUser, showRef }: Props) 
     // Draw track surface (wide gray line using user coords as baseline)
     ctx.beginPath();
     ctx.strokeStyle = hexToRgba(COLORS.txt, 0.04);
-    ctx.lineWidth = 28 * (scale / 2);
+    ctx.lineWidth = Math.max(12, 28 * (scale / 2));
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     for (let i = 0; i < ux.length; i++) {
@@ -107,18 +121,21 @@ export default function RacingLineMap({ hd, sector, showUser, showRef }: Props) 
     }
     ctx.stroke();
 
+    // Line widths scale with zoom
+    const outlineW = Math.max(3, Math.min(8, 5 * zoom));
+    const lineW = Math.max(2, Math.min(6, 3 * zoom));
+
     // Helper: draw a racing line colored by speed with an outline
     const drawRacingLine = (
       xs: number[],
       ys: number[],
       speeds: number[],
       outlineColor: string,
-      label: string
     ) => {
       // Outline
       ctx.beginPath();
       ctx.strokeStyle = hexToRgba(outlineColor, 0.3);
-      ctx.lineWidth = 5;
+      ctx.lineWidth = outlineW;
       ctx.lineJoin = "round";
       ctx.lineCap = "round";
       for (let i = 0; i < xs.length; i++) {
@@ -134,7 +151,7 @@ export default function RacingLineMap({ hd, sector, showUser, showRef }: Props) 
         const [x1, y1] = toScreen(xs[i], ys[i]);
         ctx.beginPath();
         ctx.strokeStyle = speedToColor(speeds[i], spdMin, spdMax);
-        ctx.lineWidth = 3;
+        ctx.lineWidth = lineW;
         ctx.lineCap = "round";
         ctx.moveTo(x0, y0);
         ctx.lineTo(x1, y1);
@@ -143,8 +160,8 @@ export default function RacingLineMap({ hd, sector, showUser, showRef }: Props) 
     };
 
     // Draw reference line first (behind), then user line
-    if (showRef) drawRacingLine(rx, ry, rSpd, COLORS.ref, "Ref");
-    if (showUser) drawRacingLine(ux, uy, uSpd, COLORS.user, "You");
+    if (showRef) drawRacingLine(rx, ry, rSpd, COLORS.ref);
+    if (showUser) drawRacingLine(ux, uy, uSpd, COLORS.user);
 
     // Find braking and gas points
     const drawMarker = (
@@ -177,41 +194,44 @@ export default function RacingLineMap({ hd, sector, showUser, showRef }: Props) 
         if (speeds[i] < minSpd) { minSpd = speeds[i]; minIdx = i; }
       }
 
+      const markerR = Math.max(4, Math.min(8, 5 * zoom));
+      const fontSize = Math.max(9, Math.min(13, 10 * zoom));
+
       if (brkIdx >= 0 && brkIdx < xs.length) {
         const [bx, by] = toScreen(xs[brkIdx], ys[brkIdx]);
         ctx.beginPath();
-        ctx.arc(bx, by, 5, 0, Math.PI * 2);
+        ctx.arc(bx, by, markerR, 0, Math.PI * 2);
         ctx.fillStyle = color;
         ctx.fill();
-        ctx.font = '600 10px "JetBrains Mono", monospace';
+        ctx.font = `600 ${fontSize}px "JetBrains Mono", monospace`;
         ctx.fillStyle = color;
         ctx.textAlign = labelSide > 0 ? "left" : "right";
         ctx.textBaseline = "middle";
-        ctx.fillText("BRK", bx + labelSide * 10, by);
+        ctx.fillText("BRK", bx + labelSide * (markerR + 5), by);
       }
 
       if (gasIdx >= 0 && gasIdx < xs.length) {
         const [gx, gy] = toScreen(xs[gasIdx], ys[gasIdx]);
         ctx.beginPath();
-        ctx.arc(gx, gy, 5, 0, Math.PI * 2);
+        ctx.arc(gx, gy, markerR, 0, Math.PI * 2);
         ctx.strokeStyle = color;
         ctx.lineWidth = 2;
         ctx.stroke();
-        ctx.font = '600 10px "JetBrains Mono", monospace';
+        ctx.font = `600 ${fontSize}px "JetBrains Mono", monospace`;
         ctx.fillStyle = color;
         ctx.textAlign = labelSide > 0 ? "left" : "right";
         ctx.textBaseline = "middle";
-        ctx.fillText("GAS", gx + labelSide * 10, gy);
+        ctx.fillText("GAS", gx + labelSide * (markerR + 5), gy);
       }
 
       // Min speed annotation
       if (minIdx >= 0 && minIdx < xs.length) {
         const [mx, my] = toScreen(xs[minIdx], ys[minIdx]);
-        ctx.font = '500 10px "JetBrains Mono", monospace';
+        ctx.font = `500 ${fontSize}px "JetBrains Mono", monospace`;
         ctx.fillStyle = color;
         ctx.textAlign = "center";
         ctx.textBaseline = labelSide > 0 ? "bottom" : "top";
-        ctx.fillText(`${minSpd.toFixed(0)}`, mx, my + labelSide * -14);
+        ctx.fillText(`${minSpd.toFixed(0)}`, mx, my + labelSide * -(markerR + 9));
       }
     };
 
@@ -313,7 +333,16 @@ export default function RacingLineMap({ hd, sector, showUser, showRef }: Props) 
         }
       }
     }
-  }, [hd, sector, showUser, showRef, hover]);
+
+    // Zoom level indicator (when zoomed)
+    if (zoom > 1.05) {
+      ctx.font = '500 10px "JetBrains Mono", monospace';
+      ctx.fillStyle = hexToRgba(COLORS.txtDim, 0.5);
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      ctx.fillText(`${zoom.toFixed(1)}x`, 8, 8);
+    }
+  }, [hd, sector, showUser, showRef, hover, zoom, pan]);
 
   useEffect(() => {
     draw();
@@ -322,18 +351,80 @@ export default function RacingLineMap({ hd, sector, showUser, showRef }: Props) 
     return () => window.removeEventListener("resize", handleResize);
   }, [draw]);
 
+  // Ctrl+Wheel to zoom (normal scroll passes through to the page)
+  // Use native event listener so we can conditionally preventDefault
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return; // let page scroll normally
+      e.preventDefault();
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      setZoom((z) => Math.max(0.5, Math.min(20, z * factor)));
+    };
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", onWheel);
+  }, []);
+
+  const stepZoom = useCallback((dir: 1 | -1) => {
+    setZoom((z) => Math.max(0.5, Math.min(20, z * (dir > 0 ? 1.3 : 1 / 1.3))));
+  }, []);
+
+  // Drag to pan
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    dragRef.current = { startX: e.clientX, startY: e.clientY, panX: pan.x, panY: pan.y };
+  }, [pan]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (dragRef.current) {
+      const dx = e.clientX - dragRef.current.startX;
+      const dy = e.clientY - dragRef.current.startY;
+      setPan({ x: dragRef.current.panX + dx, y: dragRef.current.panY + dy });
+    } else {
+      const rect = e.currentTarget.getBoundingClientRect();
+      setHover({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    }
+  }, []);
+
+  const handleMouseUp = useCallback(() => {
+    dragRef.current = null;
+  }, []);
+
+  const isZoomed = zoom > 1.05 || Math.abs(pan.x) > 1 || Math.abs(pan.y) > 1;
+
+  const btnClass =
+    "w-7 h-7 flex items-center justify-center rounded-md bg-surface2 border border-border text-txt-dim hover:text-txt hover:bg-surface2/80 transition-colors text-sm font-mono font-semibold";
+
   return (
-    <div ref={containerRef} className="w-full">
+    <div ref={containerRef} className="w-full relative">
       <canvas
         ref={canvasRef}
-        className="w-full"
+        className={`w-full ${dragRef.current ? "cursor-grabbing" : "cursor-grab"}`}
         style={{ height: HEIGHT }}
-        onMouseMove={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          setHover({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={() => {
+          setHover(null);
+          dragRef.current = null;
         }}
-        onMouseLeave={() => setHover(null)}
       />
+      {/* Zoom controls */}
+      <div className="absolute top-2 right-2 flex items-center gap-1">
+        <button onClick={() => stepZoom(1)} className={btnClass} title="Zoom in">+</button>
+        <button onClick={() => stepZoom(-1)} className={btnClass} title="Zoom out">&minus;</button>
+        {isZoomed && (
+          <button
+            onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}
+            className="h-7 px-2 flex items-center justify-center rounded-md
+              bg-surface2 border border-border text-txt-dim hover:text-txt hover:bg-surface2/80
+              transition-colors text-[10px] font-medium"
+          >
+            Reset
+          </button>
+        )}
+      </div>
     </div>
   );
 }
