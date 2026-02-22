@@ -2,44 +2,67 @@
 
 import { useState, useRef, useCallback } from "react";
 
+interface LapFiles {
+  ld: File;
+  ldx: File | null;
+}
+
 interface Props {
-  onAnalyze: (userFile: File, refFile: File) => void;
+  onAnalyze: (userFiles: LapFiles, refFiles: LapFiles) => void;
   loading: boolean;
   error: string | null;
 }
 
 function DropBox({
   label,
-  file,
-  onFile,
+  ld,
+  ldx,
+  onFiles,
 }: {
   label: string;
-  file: File | null;
-  onFile: (f: File) => void;
+  ld: File | null;
+  ldx: File | null;
+  onFiles: (ld: File | null, ldx: File | null) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+
+  const processFiles = useCallback(
+    (fileList: FileList | File[]) => {
+      let newLd: File | null = null;
+      let newLdx: File | null = null;
+
+      for (const f of Array.from(fileList)) {
+        const name = f.name.toLowerCase();
+        if (name.endsWith(".ld") && !name.endsWith(".ldx")) newLd = f;
+        else if (name.endsWith(".ldx")) newLdx = f;
+      }
+
+      // Merge with existing: new files override, missing ones keep previous
+      onFiles(newLd ?? ld, newLdx ?? ldx);
+    },
+    [onFiles, ld, ldx]
+  );
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setDragOver(false);
-      const f = e.dataTransfer.files[0];
-      if (f && f.name.endsWith(".ld")) onFile(f);
+      processFiles(e.dataTransfer.files);
     },
-    [onFile]
+    [processFiles]
   );
 
   return (
     <div
       className={`
-        relative flex flex-col items-center justify-center gap-3
-        w-full h-48 rounded-xl border-2 border-dashed cursor-pointer
+        relative flex flex-col items-center justify-center gap-2
+        w-full min-h-[12rem] rounded-xl border-2 border-dashed cursor-pointer
         transition-all duration-200
         ${
           dragOver
             ? "border-user bg-user/5"
-            : file
+            : ld
             ? "border-gain/40 bg-gain/5"
             : "border-border hover:border-txt-dim bg-surface"
         }
@@ -55,17 +78,18 @@ function DropBox({
       <input
         ref={inputRef}
         type="file"
-        accept=".ld"
+        accept=".ld,.ldx"
+        multiple
         className="hidden"
         onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) onFile(f);
+          if (e.target.files) processFiles(e.target.files);
+          e.target.value = "";
         }}
       />
-      {file ? (
+      {ld ? (
         <>
           <svg
-            className="w-8 h-8 text-gain"
+            className="w-7 h-7 text-gain"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -77,10 +101,19 @@ function DropBox({
               d="M5 13l4 4L19 7"
             />
           </svg>
-          <span className="text-sm text-txt font-medium">{file.name}</span>
+          <span className="text-sm text-txt font-medium">{ld.name}</span>
           <span className="text-xs text-txt-dim">
-            {(file.size / 1024).toFixed(0)} KB
+            {(ld.size / 1024).toFixed(0)} KB
           </span>
+          {ldx ? (
+            <span className="text-xs text-gain/70">
+              + {ldx.name}
+            </span>
+          ) : (
+            <span className="text-xs text-txt-dim/40">
+              .ldx not provided (optional)
+            </span>
+          )}
         </>
       ) : (
         <>
@@ -99,6 +132,9 @@ function DropBox({
           </svg>
           <span className="text-sm text-txt-dim">{label}</span>
           <span className="text-xs text-txt-dim/60">
+            .ld required &middot; .ldx optional
+          </span>
+          <span className="text-xs text-txt-dim/40">
             Drag & drop or click to browse
           </span>
         </>
@@ -108,10 +144,12 @@ function DropBox({
 }
 
 export default function UploadZone({ onAnalyze, loading, error }: Props) {
-  const [userFile, setUserFile] = useState<File | null>(null);
-  const [refFile, setRefFile] = useState<File | null>(null);
+  const [userLd, setUserLd] = useState<File | null>(null);
+  const [userLdx, setUserLdx] = useState<File | null>(null);
+  const [refLd, setRefLd] = useState<File | null>(null);
+  const [refLdx, setRefLdx] = useState<File | null>(null);
 
-  const canAnalyze = userFile && refFile && !loading;
+  const canAnalyze = userLd && refLd && !loading;
 
   return (
     <div className="w-full max-w-2xl mx-auto">
@@ -119,23 +157,31 @@ export default function UploadZone({ onAnalyze, loading, error }: Props) {
         <div>
           <label className="block text-sm font-medium text-txt-dim mb-2">
             <span className="inline-block w-2 h-2 rounded-full bg-user mr-2" />
-            Your lap (.ld)
+            Your lap
           </label>
           <DropBox
-            label="Your telemetry file"
-            file={userFile}
-            onFile={setUserFile}
+            label="Your telemetry files"
+            ld={userLd}
+            ldx={userLdx}
+            onFiles={(ld, ldx) => {
+              setUserLd(ld);
+              setUserLdx(ldx);
+            }}
           />
         </div>
         <div>
           <label className="block text-sm font-medium text-txt-dim mb-2">
             <span className="inline-block w-2 h-2 rounded-full bg-ref mr-2" />
-            Reference lap (.ld)
+            Reference lap
           </label>
           <DropBox
-            label="Reference telemetry file"
-            file={refFile}
-            onFile={setRefFile}
+            label="Reference telemetry files"
+            ld={refLd}
+            ldx={refLdx}
+            onFiles={(ld, ldx) => {
+              setRefLd(ld);
+              setRefLdx(ldx);
+            }}
           />
         </div>
       </div>
@@ -149,7 +195,11 @@ export default function UploadZone({ onAnalyze, loading, error }: Props) {
       <button
         disabled={!canAnalyze}
         onClick={() => {
-          if (userFile && refFile) onAnalyze(userFile, refFile);
+          if (userLd && refLd)
+            onAnalyze(
+              { ld: userLd, ldx: userLdx },
+              { ld: refLd, ldx: refLdx }
+            );
         }}
         className={`
           w-full py-3 px-6 rounded-xl font-semibold text-base

@@ -1,16 +1,13 @@
 """
 DeltaHunter – MoTeC i2 (.ld) telemetry parser and analysis endpoint.
 
-Supports two formats:
-  A) Telemetrick (default) – float32/int16 channels
-  B) ACTI – all int16, encoded with (raw + 30000) / 60000 * 2|mult|
+Supports .ld files from Telemetrick, ACTI, and other MoTeC-compatible loggers.
+Channel data is decoded using the standard header scaling: (raw / scale * 10^(-dec) + shift) * mul.
 """
 
 from http.server import BaseHTTPRequestHandler
 import json
 import struct
-import io
-import math
 import re
 import numpy as np
 
@@ -56,33 +53,9 @@ def read_str(buf: bytes, offset: int, length: int) -> str:
     return raw.decode("latin-1", errors="replace").strip()
 
 
-def detect_acti(buf: bytes) -> bool:
-    header_chunk = buf[:2048].decode("latin-1", errors="replace").upper()
-    return "ACTI" in header_chunk or "AC_LIVE" in header_chunk
 
 
-# Known max ranges for ACTI channels when mult is unavailable
-ACTI_FALLBACK_RANGES = {
-    "speed": 400,
-    "throttle": 100,
-    "brake": 100,
-    "steering": 900,
-    "rpm": 15000,
-    "handbrake": 100,
-    "clutch": 100,
-}
-
-
-def get_acti_fallback_range(channel_name: str) -> float | None:
-    """Get estimated max range for an ACTI channel based on its name."""
-    name = channel_name.lower()
-    for key, max_val in ACTI_FALLBACK_RANGES.items():
-        if key in name:
-            return max_val
-    return None
-
-
-def parse_channels(buf: bytes, is_acti: bool):
+def parse_channels(buf: bytes):
     """Parse all channel metadata + data from the .ld binary."""
     meta_ptr = struct.unpack_from("<I", buf, 8)[0]
     data_ptr = struct.unpack_from("<I", buf, 12)[0]
@@ -90,39 +63,28 @@ def parse_channels(buf: bytes, is_acti: bool):
     channels = {}
     ptr = meta_ptr
     visited = set()
-    first_channel = True
 
     while ptr != 0 and ptr < len(buf) and ptr not in visited:
         visited.add(ptr)
-        if ptr + 100 > len(buf):
+        if ptr + 124 > len(buf):
             break
 
         prev = struct.unpack_from("<I", buf, ptr + 0)[0]
         nxt = struct.unpack_from("<I", buf, ptr + 4)[0]
         ch_data_ptr = struct.unpack_from("<I", buf, ptr + 8)[0]
         data_count = struct.unpack_from("<I", buf, ptr + 12)[0]
-        dtype = struct.unpack_from("<H", buf, ptr + 16)[0]
-        dtype_size = struct.unpack_from("<H", buf, ptr + 18)[0]
-        freq = struct.unpack_from("<H", buf, ptr + 20)[0]
-        shift = struct.unpack_from("<h", buf, ptr + 22)[0]
-        mult = struct.unpack_from("<f", buf, ptr + 24)[0]
-        scale = struct.unpack_from("<f", buf, ptr + 28)[0]
+        # ptr+16 is "counter" (skip)
+        dtype_a = struct.unpack_from("<H", buf, ptr + 18)[0]
+        dtype_v = struct.unpack_from("<H", buf, ptr + 20)[0]
+        freq = struct.unpack_from("<H", buf, ptr + 22)[0]
+        shift = struct.unpack_from("<h", buf, ptr + 24)[0]
+        mul = struct.unpack_from("<h", buf, ptr + 26)[0]
+        scale = struct.unpack_from("<h", buf, ptr + 28)[0]
+        dec = struct.unpack_from("<h", buf, ptr + 30)[0]
 
         name = read_str(buf, ptr + 32, 32)
-        short_name = read_str(buf, ptr + 64, 32)
-        units = read_str(buf, ptr + 96, 12)
-
-        # Debug: dump first ACTI channel header to understand layout
-        if is_acti and first_channel:
-            first_channel = False
-            print(f"[DEBUG] ACTI first channel raw header at ptr={ptr}:")
-            print(f"  prev={prev}, nxt={nxt}, data_ptr={ch_data_ptr}, count={data_count}")
-            print(f"  dtype={dtype}, dtype_size={dtype_size}, freq={freq}, shift={shift}")
-            print(f"  mult={mult}, scale={scale}")
-            print(f"  name='{name}', short='{short_name}', units='{units}'")
-            # Hex dump of first 112 bytes of channel metadata
-            raw_hex = buf[ptr:ptr+112].hex()
-            print(f"  hex: {' '.join(raw_hex[i:i+2] for i in range(0, min(len(raw_hex), 224), 2))}")
+        short_name = read_str(buf, ptr + 64, 8)
+        units = read_str(buf, ptr + 72, 12)
 
         if data_count == 0 or ch_data_ptr == 0:
             ptr = nxt
@@ -131,41 +93,45 @@ def parse_channels(buf: bytes, is_acti: bool):
         if freq == 0:
             freq = 1
 
-        # Read raw data based on actual dtype_size
-        actual_size = dtype_size if dtype_size in (2, 4) else 2  # default to i16
-        if is_acti:
-            # ACTI: always read as int16
-            end = ch_data_ptr + data_count * 2
-            if end > len(buf):
-                data_count = (len(buf) - ch_data_ptr) // 2
-                end = ch_data_ptr + data_count * 2
-            raw = np.frombuffer(buf[ch_data_ptr:end], dtype="<i2")
-            data = raw.astype(np.float64)
-        else:
-            if dtype_size == 4:
-                end = ch_data_ptr + data_count * 4
-                if end > len(buf):
-                    data_count = (len(buf) - ch_data_ptr) // 4
-                    end = ch_data_ptr + data_count * 4
-                data = np.frombuffer(buf[ch_data_ptr:end], dtype="<f4").astype(
-                    np.float64
-                )
+        # Determine numpy dtype from dtype_a (family) and dtype_v (variant)
+        if dtype_a in (0x07,):
+            # Float family
+            if dtype_v == 3:
+                np_dtype, sample_size = "<f4", 4
+            elif dtype_v == 1:
+                np_dtype, sample_size = "<f2", 2
             else:
-                end = ch_data_ptr + data_count * 2
-                if end > len(buf):
-                    data_count = (len(buf) - ch_data_ptr) // 2
-                    end = ch_data_ptr + data_count * 2
-                data = np.frombuffer(buf[ch_data_ptr:end], dtype="<i2").astype(
-                    np.float64
-                )
+                np_dtype, sample_size = "<f4", 4
+        elif dtype_a in (0, 0x03, 0x05):
+            # Integer family
+            if dtype_v == 3:
+                np_dtype, sample_size = "<i4", 4
+            else:
+                np_dtype, sample_size = "<i2", 2
+        else:
+            np_dtype, sample_size = "<i2", 2
+
+        end = ch_data_ptr + data_count * sample_size
+        if end > len(buf):
+            data_count = (len(buf) - ch_data_ptr) // sample_size
+            end = ch_data_ptr + data_count * sample_size
+        data = np.frombuffer(buf[ch_data_ptr:end], dtype=np_dtype).astype(
+            np.float64
+        )
+        # Apply ldparser scaling: (raw / scale * 10^(-dec) + shift) * mul
+        safe_scale = scale if scale != 0 else 1
+        safe_mul = mul if mul != 0 else 1
+        data = (data / safe_scale * (10.0 ** (-dec)) + shift) * safe_mul
 
         channels[name] = {
             "data": data,
             "freq": freq,
             "shift": shift,
-            "mult": mult,
+            "mul": mul,
             "scale": scale,
-            "dtype_size": dtype_size,
+            "dec": dec,
+            "dtype_a": dtype_a,
+            "dtype_v": dtype_v,
             "units": units,
             "short_name": short_name,
         }
@@ -184,38 +150,13 @@ def find_channel(channels: dict, *keywords):
     return None, None
 
 
-def decode_acti_continuous(raw: np.ndarray, mult: float, channel_name: str = "") -> np.ndarray:
-    # If mult is valid (not garbage), use standard formula
-    if abs(mult) > 0.001:
-        return (raw + 30000.0) / 60000.0 * (2.0 * abs(mult))
 
-    # mult is garbage — try fallback based on channel name
-    max_range = get_acti_fallback_range(channel_name)
-    if max_range is not None:
-        return (raw + 30000.0) / 60000.0 * max_range
-
-    # For coordinates and unknown channels: scale raw linearly
-    # Normalize to [-1, 1] range
-    raw_max = max(abs(raw.min()), abs(raw.max()), 1.0)
-    return raw / raw_max
-
-
-def decode_acti_discrete(raw: np.ndarray) -> np.ndarray:
-    return np.round((raw + 30000.0) / 10000.0)
-
-
-def get_channel_data(channels: dict, is_acti: bool, *keywords, discrete=False):
-    """Find and decode a channel. Returns (data_array, freq) or (None, 0)."""
+def get_channel_data(channels: dict, *keywords):
+    """Find a channel. Returns (data_array, freq) or (None, 0)."""
     name, ch = find_channel(channels, *keywords)
     if ch is None:
         return None, 0
     data = ch["data"].copy()
-    if is_acti:
-        if discrete:
-            data = decode_acti_discrete(data)
-        else:
-            data = decode_acti_continuous(data, ch["mult"], name)
-        print(f"[DEBUG] ACTI decoded '{name}': range=[{data.min():.2f}, {data.max():.2f}]")
     return data, ch["freq"]
 
 
@@ -230,13 +171,13 @@ def parse_header(buf: bytes):
 # Lap detection and extraction
 # ---------------------------------------------------------------------------
 
-def extract_best_lap(channels: dict, is_acti: bool):
+def extract_best_lap(channels: dict):
     """Find the best (fastest complete) lap and return channel slices."""
     # --- Lap number channel ---
     # Try specific names first, then fallback
     lap_data, lap_freq = None, 0
     for kw in [("lap", "number"), ("lap", "count"), ("session", "lap", "count")]:
-        lap_data, lap_freq = get_channel_data(channels, is_acti, *kw, discrete=True)
+        lap_data, lap_freq = get_channel_data(channels,*kw)
         if lap_data is not None:
             break
     if lap_data is None:
@@ -244,21 +185,21 @@ def extract_best_lap(channels: dict, is_acti: bool):
         for name, ch in channels.items():
             lower = name.lower()
             if "lap" in lower and ("num" in lower or "count" in lower or lower == "lap number"):
-                lap_data, lap_freq = get_channel_data(channels, is_acti, name, discrete=True)
+                lap_data, lap_freq = get_channel_data(channels,name)
                 if lap_data is not None:
                     break
 
     # --- Distance channel ---
-    dist_data, dist_freq = get_channel_data(channels, is_acti, "lap", "dist")
+    dist_data, dist_freq = get_channel_data(channels,"lap", "dist")
     if dist_data is None:
-        dist_data, dist_freq = get_channel_data(channels, is_acti, "distance")
+        dist_data, dist_freq = get_channel_data(channels,"distance")
 
     # --- Speed channel ---
-    speed_data, speed_freq = get_channel_data(channels, is_acti, "ground", "speed")
+    speed_data, speed_freq = get_channel_data(channels,"ground", "speed")
     if speed_data is None:
-        speed_data, speed_freq = get_channel_data(channels, is_acti, "speed")
+        speed_data, speed_freq = get_channel_data(channels,"speed")
     if speed_data is None:
-        speed_data, speed_freq = get_channel_data(channels, is_acti, "gnd", "spd")
+        speed_data, speed_freq = get_channel_data(channels,"gnd", "spd")
 
     if speed_data is None:
         raise ValueError("Missing essential channel: speed")
@@ -327,21 +268,22 @@ def extract_best_lap(channels: dict, is_acti: bool):
         laps[current_lap] = {"start": ds, "end": di, "freq": lap_freq}
         print(f"[DEBUG] Split into {len(laps)} laps by distance resets")
 
-    # Calculate lap distances
+    # Calculate lap distances using peak distance within each lap segment
+    # (handles distance resets that occur at lap boundaries)
     max_dist = 0
     for ln, info in laps.items():
         s = int(info["start"] * dist_freq / lap_freq)
         e = int(info["end"] * dist_freq / lap_freq)
         e = min(e, len(dist_data) - 1)
         s = min(s, len(dist_data) - 1)
-        lap_dist = float(dist_data[e]) - float(dist_data[s])
-        if lap_dist < 0:
-            lap_dist = float(dist_data[e])
+        dist_slice = dist_data[s : e + 1]
+        lap_dist = float(np.max(dist_slice)) - float(np.min(dist_slice)) if len(dist_slice) > 0 else 0
         info["distance"] = lap_dist
         if lap_dist > max_dist:
             max_dist = lap_dist
 
-    print(f"[DEBUG] Lap distances: {[(ln, f'{info[\"distance\"]:.0f}m') for ln, info in sorted(laps.items())[:10]]}")
+    lap_dists = [(ln, round(info["distance"])) for ln, info in sorted(laps.items())[:10]]
+    print(f"[DEBUG] Lap distances: {lap_dists}")
 
     # Filter complete laps (>90% of max distance)
     threshold = max_dist * 0.9
@@ -380,55 +322,64 @@ def extract_best_lap(channels: dict, is_acti: bool):
     # Speed
     result["speed"] = extract(speed_data, speed_freq)
 
-    # Distance
+    # Distance — unwrap resets so distance is monotonically increasing
     raw_dist = extract(dist_data, dist_freq)
-    # Normalize distance to start at 0
+    if len(raw_dist) > 1:
+        # Unwrap distance resets: when distance drops, add the previous max
+        unwrapped = np.empty_like(raw_dist)
+        unwrapped[0] = raw_dist[0]
+        offset = 0.0
+        for i in range(1, len(raw_dist)):
+            if raw_dist[i] < raw_dist[i - 1] - 50:
+                offset += raw_dist[i - 1]
+            unwrapped[i] = raw_dist[i] + offset
+        raw_dist = unwrapped
     if len(raw_dist) > 0:
         raw_dist = raw_dist - raw_dist[0]
     result["dist"] = raw_dist
 
     # Throttle
-    thr, thr_f = get_channel_data(channels, is_acti, "throttle")
+    thr, thr_f = get_channel_data(channels,"throttle")
     if thr is None:
-        thr, thr_f = get_channel_data(channels, is_acti, "thr")
+        thr, thr_f = get_channel_data(channels,"thr")
     if thr is not None:
         result["throttle"] = extract(thr, thr_f)
     else:
         result["throttle"] = np.zeros_like(result["speed"])
 
     # Brake
-    brk, brk_f = get_channel_data(channels, is_acti, "brake")
+    brk, brk_f = get_channel_data(channels,"brake")
     if brk is None:
-        brk, brk_f = get_channel_data(channels, is_acti, "brk")
+        brk, brk_f = get_channel_data(channels,"brk")
     if brk is not None:
         result["brake"] = extract(brk, brk_f)
     else:
         result["brake"] = np.zeros_like(result["speed"])
 
     # Gear
-    gear, gear_f = get_channel_data(channels, is_acti, "gear", discrete=True)
+    gear, gear_f = get_channel_data(channels,"gear")
     if gear is not None:
         result["gear"] = extract(gear, gear_f)
     else:
         result["gear"] = np.ones_like(result["speed"])
 
     # Steering
-    steer, steer_f = get_channel_data(channels, is_acti, "steer")
+    steer, steer_f = get_channel_data(channels,"steer")
     if steer is not None:
         result["steering"] = extract(steer, steer_f)
     else:
         result["steering"] = np.zeros_like(result["speed"])
 
     # Coordinates XY
-    cx, cx_f = get_channel_data(channels, is_acti, "car", "coord", "x")
-    cy, cy_f = get_channel_data(channels, is_acti, "car", "coord", "y")
+    cx, cx_f = get_channel_data(channels,"car", "coord", "x")
+    cy, cy_f = get_channel_data(channels,"car", "coord", "y")
     if cx is not None and cy is not None:
         result["coord_x"] = extract(cx, cx_f)
         result["coord_y"] = extract(cy, cy_f)
     else:
         # Fallback: try pos x / pos y
-        cx, cx_f = get_channel_data(channels, is_acti, "pos", "x")
-        cy, cy_f = get_channel_data(channels, is_acti, "pos", "y")
+        cx, cx_f = get_channel_data(channels,"pos", "x")
+        cy, cy_f = get_channel_data(channels,"pos", "y")
         if cx is not None and cy is not None:
             result["coord_x"] = extract(cx, cx_f)
             result["coord_y"] = extract(cy, cy_f)
@@ -513,10 +464,10 @@ def align_xy_procrustes(
 
         # Weighted least squares: [sx, sy, 1] -> tx
         A = np.column_stack([source_x, source_y, np.ones(n)])
-        W = np.diag(weights)
 
         try:
-            AW = A.T @ W
+            # Element-wise weighting (avoids creating n×n diagonal matrix)
+            AW = A.T * weights
             coeffs_x = np.linalg.lstsq(AW @ A, AW @ target_x, rcond=None)[0]
             coeffs_y = np.linalg.lstsq(AW @ A, AW @ target_y, rcond=None)[0]
         except np.linalg.LinAlgError:
@@ -660,34 +611,33 @@ def generate_tip(sector_name: str, user_min_speed: float, ref_min_speed: float) 
 # ---------------------------------------------------------------------------
 
 def analyze(user_buf: bytes, ref_buf: bytes) -> dict:
-    user_is_acti = detect_acti(user_buf)
-    ref_is_acti = detect_acti(ref_buf)
+    # Detect .ldx companion files (XML, not telemetry data)
+    for label, buf in [("User", user_buf), ("Reference", ref_buf)]:
+        stripped = buf.lstrip()[:10]
+        if stripped.startswith(b"<?xml") or stripped.startswith(b"<LDXFile"):
+            raise ValueError(
+                f"{label} file appears to be an .ldx (XML) companion file. "
+                "Please upload the .ld telemetry file instead."
+            )
 
-    print(f"[DEBUG] User file: {len(user_buf)} bytes, ACTI={user_is_acti}")
-    print(f"[DEBUG] Ref file: {len(ref_buf)} bytes, ACTI={ref_is_acti}")
+    print(f"[DEBUG] User file: {len(user_buf)} bytes")
+    print(f"[DEBUG] Ref file: {len(ref_buf)} bytes")
 
-    user_channels = parse_channels(user_buf, user_is_acti)
-    ref_channels = parse_channels(ref_buf, ref_is_acti)
+    user_channels = parse_channels(user_buf)
+    ref_channels = parse_channels(ref_buf)
 
     print(f"[DEBUG] User channels ({len(user_channels)}): {list(user_channels.keys())}")
     print(f"[DEBUG] Ref channels ({len(ref_channels)}): {list(ref_channels.keys())}")
-
-    # Dump key channel metadata for ACTI
-    if ref_is_acti:
-        for cname in ["Ground Speed", "Throttle Pos", "Brake Pos", "Session Lap Count"]:
-            if cname in ref_channels:
-                ch = ref_channels[cname]
-                print(f"[DEBUG] Ref '{cname}': freq={ch['freq']}, mult={ch['mult']}, scale={ch['scale']}, dtype_size={ch['dtype_size']}, shift={ch['shift']}, raw_range=[{ch['data'].min():.0f}, {ch['data'].max():.0f}]")
 
     user_driver, user_car, user_track = parse_header(user_buf)
     ref_driver, ref_car, ref_track = parse_header(ref_buf)
 
     print("[DEBUG] --- Extracting user lap ---")
-    user_lap = extract_best_lap(user_channels, user_is_acti)
+    user_lap = extract_best_lap(user_channels)
     print(f"[DEBUG] User lap: time={user_lap['lap_time']:.3f}s, dist range=[{user_lap['dist'][0]:.1f}, {user_lap['dist'][-1]:.1f}]m, samples={len(user_lap['dist'])}")
 
     print("[DEBUG] --- Extracting ref lap ---")
-    ref_lap = extract_best_lap(ref_channels, ref_is_acti)
+    ref_lap = extract_best_lap(ref_channels)
     print(f"[DEBUG] Ref lap: time={ref_lap['lap_time']:.3f}s, dist range=[{ref_lap['dist'][0]:.1f}, {ref_lap['dist'][-1]:.1f}]m, samples={len(ref_lap['dist'])}")
 
     # Create common distance grid (2m resolution for HD, 6m for charts)
@@ -706,8 +656,7 @@ def analyze(user_buf: bytes, ref_buf: bytes) -> dict:
     user_chart = interp_to_dist(user_lap, chart_grid)
     ref_chart = interp_to_dist(ref_lap, chart_grid)
 
-    # Align XY coordinates if from different sources
-    same_source = user_is_acti == ref_is_acti
+    # Align XY coordinates (Procrustes alignment for cross-file comparison)
     has_coords = (
         user_hd["coord_x"] is not None
         and user_hd["coord_y"] is not None
@@ -715,7 +664,7 @@ def analyze(user_buf: bytes, ref_buf: bytes) -> dict:
         and ref_hd["coord_y"] is not None
     )
 
-    if has_coords and not same_source:
+    if has_coords:
         ref_aligned_x, ref_aligned_y = align_xy_procrustes(
             user_hd["coord_x"],
             user_hd["coord_y"],

@@ -12,14 +12,19 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleAnalyze = async (userFile: File, refFile: File) => {
+  const handleAnalyze = async (
+    userFiles: { ld: File; ldx: File | null },
+    refFiles: { ld: File; ldx: File | null }
+  ) => {
     setLoading(true);
     setError(null);
 
     try {
       const form = new FormData();
-      form.append("user_file", userFile);
-      form.append("ref_file", refFile);
+      form.append("user_file", userFiles.ld);
+      form.append("ref_file", refFiles.ld);
+      if (userFiles.ldx) form.append("user_ldx", userFiles.ldx);
+      if (refFiles.ldx) form.append("ref_ldx", refFiles.ldx);
 
       const res = await fetch("/api/analyze", {
         method: "POST",
@@ -58,7 +63,9 @@ export default function Home() {
 
       <div className="mt-16 text-center text-txt-dim/50 text-xs max-w-sm">
         <p>
-          Supports .ld files from Assetto Corsa (Telemetrick & ACTI).
+          Supports MoTeC .ld telemetry from Assetto Corsa (Telemetrick & ACTI).
+          <br />
+          Drop .ld + .ldx together, or just the .ld file.
           <br />
           Files are processed in-memory and never stored.
         </p>

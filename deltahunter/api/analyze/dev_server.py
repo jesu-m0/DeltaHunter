@@ -8,6 +8,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
 import sys
 import os
+import traceback
 
 # Add parent dir so we can import route
 sys.path.insert(0, os.path.dirname(__file__))
@@ -45,6 +46,7 @@ class DevHandler(BaseHTTPRequestHandler):
         except ValueError as e:
             self._error(400, str(e))
         except Exception as e:
+            traceback.print_exc()
             self._error(500, f"Analysis failed: {str(e)}")
 
     def do_OPTIONS(self):
