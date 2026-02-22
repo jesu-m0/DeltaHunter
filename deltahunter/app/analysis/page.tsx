@@ -29,6 +29,8 @@ export default function AnalysisPage() {
   const setActiveSector = useAnalysisStore((s) => s.setActiveSector);
   const setShowUser = useAnalysisStore((s) => s.setShowUser);
   const setShowRef = useAnalysisStore((s) => s.setShowRef);
+  const markerDist = useAnalysisStore((s) => s.markerDist);
+  const setMarkerDist = useAnalysisStore((s) => s.setMarkerDist);
 
   useEffect(() => {
     if (!data) router.replace("/");
@@ -130,6 +132,8 @@ export default function AnalysisPage() {
             onToggleUser={() => setShowUser(!showUser)}
             onToggleRef={() => setShowRef(!showRef)}
             onClose={() => setActiveSector(null)}
+            markerDist={markerDist}
+            onMarkerPlace={setMarkerDist}
           />
         )}
 
@@ -162,6 +166,8 @@ export default function AnalysisPage() {
               activeSector={activeSector}
               showUser={showUser}
               showRef={showRef}
+              markerDist={markerDist}
+              onMarkerPlace={setMarkerDist}
             />
           </div>
 
@@ -173,6 +179,8 @@ export default function AnalysisPage() {
               chart={chart}
               sectors={sectors}
               activeSector={activeSector}
+              markerDist={markerDist}
+              onMarkerPlace={setMarkerDist}
             />
           </div>
 
@@ -187,6 +195,8 @@ export default function AnalysisPage() {
                 activeSector={activeSector}
                 showUser={showUser}
                 showRef={showRef}
+                markerDist={markerDist}
+                onMarkerPlace={setMarkerDist}
               />
             </div>
             <div className="bg-surface rounded-xl border border-border p-4">
@@ -199,6 +209,8 @@ export default function AnalysisPage() {
                 activeSector={activeSector}
                 showUser={showUser}
                 showRef={showRef}
+                markerDist={markerDist}
+                onMarkerPlace={setMarkerDist}
               />
             </div>
           </div>

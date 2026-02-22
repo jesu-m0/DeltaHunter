@@ -14,6 +14,8 @@ interface Props {
   onToggleUser: () => void;
   onToggleRef: () => void;
   onClose: () => void;
+  markerDist: number | null;
+  onMarkerPlace: (dist: number | null) => void;
 }
 
 export default function SectorDetail({
@@ -26,6 +28,8 @@ export default function SectorDetail({
   onToggleUser,
   onToggleRef,
   onClose,
+  markerDist,
+  onMarkerPlace,
 }: Props) {
   const diff = sector.ref_min_speed - sector.user_min_speed;
 
@@ -100,6 +104,8 @@ export default function SectorDetail({
         sector={sector}
         showUser={showUser}
         showRef={showRef}
+        markerDist={markerDist}
+        onMarkerPlace={onMarkerPlace}
       />
 
       {/* Tip */}

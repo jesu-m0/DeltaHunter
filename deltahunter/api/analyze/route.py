@@ -121,7 +121,7 @@ def parse_channels(buf: bytes):
         # Apply ldparser scaling: (raw / scale * 10^(-dec) + shift) * mul
         safe_scale = scale if scale != 0 else 1
         safe_mul = mul if mul != 0 else 1
-        data = (data / safe_scale * (10.0 ** (-dec)) + shift) * safe_mul
+        data = data / safe_scale * (10.0 ** (-dec)) * safe_mul + shift
 
         channels[name] = {
             "data": data,
@@ -339,7 +339,9 @@ def extract_best_lap(channels: dict):
     result["dist"] = raw_dist
 
     # Throttle
-    thr, thr_f = get_channel_data(channels,"throttle")
+    thr, thr_f = get_channel_data(channels,"throttle", "pos")
+    if thr is None:
+        thr, thr_f = get_channel_data(channels,"throttle")
     if thr is None:
         thr, thr_f = get_channel_data(channels,"thr")
     if thr is not None:
@@ -348,12 +350,25 @@ def extract_best_lap(channels: dict):
         result["throttle"] = np.zeros_like(result["speed"])
 
     # Brake
-    brk, brk_f = get_channel_data(channels,"brake")
-    if brk is None:
-        brk, brk_f = get_channel_data(channels,"brk")
-    if brk is not None:
+    brk_name, brk_ch = find_channel(channels, "brake", "pos")
+    if brk_ch is None:
+        brk_name, brk_ch = find_channel(channels, "brake")
+        # Skip "Brake Bias" / "Brake Temp" — we need actual pedal input
+        if brk_name and any(x in brk_name.lower() for x in ["bias", "temp", "torque"]):
+            brk_name, brk_ch = None, None
+    if brk_ch is None:
+        brk_name, brk_ch = find_channel(channels, "brk")
+    if brk_ch is not None:
+        brk = brk_ch["data"].copy()
+        brk_f = brk_ch["freq"]
+        print(f"[DEBUG] Brake channel '{brk_name}': freq={brk_f}, units='{brk_ch['units']}', "
+              f"shift={brk_ch['shift']}, mul={brk_ch['mul']}, scale={brk_ch['scale']}, dec={brk_ch['dec']}, "
+              f"dtype_a=0x{brk_ch['dtype_a']:02x}, dtype_v={brk_ch['dtype_v']}")
+        print(f"[DEBUG] Brake raw data: min={brk.min():.4f}, max={brk.max():.4f}, mean={brk.mean():.4f}, std={brk.std():.4f}, samples={len(brk)}")
+        print(f"[DEBUG] Brake first 20 values: {brk[:20].tolist()}")
         result["brake"] = extract(brk, brk_f)
     else:
+        print(f"[DEBUG] No brake channel found!")
         result["brake"] = np.zeros_like(result["speed"])
 
     # Gear

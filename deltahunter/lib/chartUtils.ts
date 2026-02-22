@@ -299,6 +299,36 @@ export function findHoverIndex(
   return closest;
 }
 
+export function drawMarkerLine(
+  ctx: CanvasRenderingContext2D,
+  markerDist: number,
+  w: number,
+  h: number,
+  pad: Padding,
+  xMin: number,
+  xMax: number
+) {
+  if (markerDist < xMin || markerDist > xMax) return;
+  const plotW = w - pad.left - pad.right;
+  const px = pad.left + ((markerDist - xMin) / (xMax - xMin)) * plotW;
+  ctx.strokeStyle = COLORS.txt;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(px, pad.top);
+  ctx.lineTo(px, h - pad.bottom);
+  ctx.stroke();
+
+  // Small triangle at top
+  ctx.fillStyle = COLORS.txt;
+  ctx.beginPath();
+  ctx.moveTo(px, pad.top);
+  ctx.lineTo(px - 4, pad.top - 6);
+  ctx.lineTo(px + 4, pad.top - 6);
+  ctx.closePath();
+  ctx.fill();
+}
+
 export function drawTooltip(
   ctx: CanvasRenderingContext2D,
   x: number,

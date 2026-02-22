@@ -8,6 +8,7 @@ import {
   drawLine,
   drawFilledLine,
   drawSectorBands,
+  drawMarkerLine,
   drawTooltip,
   findHoverIndex,
   getSliceIndices,
@@ -22,6 +23,8 @@ interface Props {
   activeSector: number | null;
   showUser: boolean;
   showRef: boolean;
+  markerDist: number | null;
+  onMarkerPlace: (dist: number | null) => void;
 }
 
 const HEIGHT = 220;
@@ -32,6 +35,8 @@ export default function SpeedChart({
   activeSector,
   showUser,
   showRef,
+  markerDist,
+  onMarkerPlace,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -83,12 +88,11 @@ export default function SpeedChart({
       drawLine(ctx, dist, userSpd, w, h, pad, xMin, xMax, 0, yMax, COLORS.user, 1.5);
     }
 
-    // Hover tooltip
+    if (markerDist !== null) drawMarkerLine(ctx, markerDist, w, h, pad, xMin, xMax);
+
     if (hover && hover.x >= pad.left && hover.x <= w - pad.right) {
       const idx = findHoverIndex(dist, hover.x, w, pad, xMin, xMax);
       if (idx >= 0 && idx < dist.length) {
-        // Crosshair
-        const plotH = h - pad.top - pad.bottom;
         const px = pad.left + ((dist[idx] - xMin) / (xMax - xMin)) * (w - pad.left - pad.right);
         ctx.strokeStyle = COLORS.border;
         ctx.lineWidth = 1;
@@ -107,7 +111,7 @@ export default function SpeedChart({
         drawTooltip(ctx, hover.x, hover.y, lines, w, h);
       }
     }
-  }, [chart, sectors, activeSector, showUser, showRef, hover, getRange]);
+  }, [chart, sectors, activeSector, showUser, showRef, hover, markerDist, getRange]);
 
   useEffect(() => {
     draw();
@@ -116,12 +120,29 @@ export default function SpeedChart({
     return () => window.removeEventListener("resize", handleResize);
   }, [draw]);
 
+  const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const pad = DEFAULT_PADDING;
+    const w = rect.width;
+    if (mx < pad.left || mx > w - pad.right) return;
+    const { xMin, xMax } = getRange();
+    const [i0, i1] = getSliceIndices(chart.dist, xMin, xMax);
+    const dist = chart.dist.slice(i0, i1);
+    const idx = findHoverIndex(dist, mx, w, pad, xMin, xMax);
+    if (idx >= 0 && idx < dist.length) {
+      const d = dist[idx];
+      onMarkerPlace(markerDist !== null && Math.abs(markerDist - d) < 12 ? null : d);
+    }
+  }, [chart, getRange, markerDist, onMarkerPlace]);
+
   return (
     <div ref={containerRef} className="w-full">
       <canvas
         ref={canvasRef}
-        className="w-full"
+        className="w-full cursor-crosshair"
         style={{ height: HEIGHT }}
+        onClick={handleClick}
         onMouseMove={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
           setHover({ x: e.clientX - rect.left, y: e.clientY - rect.top });

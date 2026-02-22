@@ -9,11 +9,13 @@ interface Props {
   sector: SectorData;
   showUser: boolean;
   showRef: boolean;
+  markerDist: number | null;
+  onMarkerPlace: (dist: number | null) => void;
 }
 
 const HEIGHT = 480;
 
-export default function RacingLineMap({ hd, sector, showUser, showRef }: Props) {
+export default function RacingLineMap({ hd, sector, showUser, showRef, markerDist, onMarkerPlace }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
@@ -22,6 +24,12 @@ export default function RacingLineMap({ hd, sector, showUser, showRef }: Props) 
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
+  // Store computed data for click handler
+  const drawDataRef = useRef<{
+    dist: number[];
+    ux: number[]; uy: number[]; rx: number[]; ry: number[];
+    toScreen: (x: number, y: number) => [number, number];
+  } | null>(null);
 
   // Reset zoom when sector changes
   useEffect(() => {
@@ -62,6 +70,9 @@ export default function RacingLineMap({ hd, sector, showUser, showRef }: Props) 
     const rThr = indices.map((i) => hd.ref_throttle[i]);
     const dist = indices.map((i) => hd.dist[i]);
 
+    // Store for click handler (updated below with toScreen)
+    drawDataRef.current = { dist, ux, uy, rx, ry, toScreen: (x, y) => [0, 0] };
+
     // Bounding box of all coords
     const allX = [...(showUser ? ux : []), ...(showRef ? rx : [])];
     const allY = [...(showUser ? uy : []), ...(showRef ? ry : [])];
@@ -88,6 +99,9 @@ export default function RacingLineMap({ hd, sector, showUser, showRef }: Props) 
       centerX + (x - dataCenterX) * scale,
       centerY - (y - dataCenterY) * scale,
     ];
+
+    // Update toScreen in ref
+    if (drawDataRef.current) drawDataRef.current.toScreen = toScreen;
 
     // Speed range for coloring
     const allSpeeds = [
@@ -273,6 +287,56 @@ export default function RacingLineMap({ hd, sector, showUser, showRef }: Props) 
 
     if (showUser) drawEntryExit(ux, uy);
 
+    // Distance marker
+    if (markerDist !== null) {
+      // Find closest index in this sector slice
+      let mIdx = -1;
+      let mBest = Infinity;
+      for (let i = 0; i < dist.length; i++) {
+        const dd = Math.abs(dist[i] - markerDist);
+        if (dd < mBest) { mBest = dd; mIdx = i; }
+      }
+      if (mIdx >= 0 && mBest < 20) {
+        const markerR = Math.max(5, Math.min(10, 7 * zoom));
+        // Draw on user line
+        if (showUser && mIdx < ux.length) {
+          const [mx, my] = toScreen(ux[mIdx], uy[mIdx]);
+          ctx.beginPath();
+          ctx.arc(mx, my, markerR, 0, Math.PI * 2);
+          ctx.fillStyle = COLORS.txt;
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(mx, my, markerR - 2, 0, Math.PI * 2);
+          ctx.fillStyle = COLORS.user;
+          ctx.fill();
+        }
+        // Draw on ref line
+        if (showRef && mIdx < rx.length) {
+          const [mx, my] = toScreen(rx[mIdx], ry[mIdx]);
+          ctx.beginPath();
+          ctx.arc(mx, my, markerR, 0, Math.PI * 2);
+          ctx.fillStyle = COLORS.txt;
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(mx, my, markerR - 2, 0, Math.PI * 2);
+          ctx.fillStyle = COLORS.ref;
+          ctx.fill();
+        }
+        // Label
+        const labelIdx = showUser ? mIdx : mIdx;
+        const labelXs = showUser ? ux : rx;
+        const labelYs = showUser ? uy : ry;
+        if (labelIdx < labelXs.length) {
+          const [lx, ly] = toScreen(labelXs[labelIdx], labelYs[labelIdx]);
+          ctx.font = `600 ${Math.max(9, Math.min(12, 10 * zoom))}px "JetBrains Mono", monospace`;
+          ctx.fillStyle = COLORS.txt;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "bottom";
+          ctx.fillText(`${markerDist.toFixed(0)}m`, lx, ly - markerR - 4);
+        }
+      }
+    }
+
     // Hover tooltip
     if (hover) {
       let closestIdx = -1;
@@ -342,7 +406,7 @@ export default function RacingLineMap({ hd, sector, showUser, showRef }: Props) 
       ctx.textBaseline = "top";
       ctx.fillText(`${zoom.toFixed(1)}x`, 8, 8);
     }
-  }, [hd, sector, showUser, showRef, hover, zoom, pan]);
+  }, [hd, sector, showUser, showRef, hover, zoom, pan, markerDist]);
 
   useEffect(() => {
     draw();
@@ -370,7 +434,7 @@ export default function RacingLineMap({ hd, sector, showUser, showRef }: Props) 
     setZoom((z) => Math.max(0.5, Math.min(20, z * (dir > 0 ? 1.3 : 1 / 1.3))));
   }, []);
 
-  // Drag to pan
+  // Drag to pan (with click detection for marker placement)
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
     dragRef.current = { startX: e.clientX, startY: e.clientY, panX: pan.x, panY: pan.y };
@@ -387,9 +451,35 @@ export default function RacingLineMap({ hd, sector, showUser, showRef }: Props) 
     }
   }, []);
 
-  const handleMouseUp = useCallback(() => {
+  const handleMouseUp = useCallback((e: React.MouseEvent) => {
+    if (dragRef.current) {
+      const dx = Math.abs(e.clientX - dragRef.current.startX);
+      const dy = Math.abs(e.clientY - dragRef.current.startY);
+      // If barely moved, treat as click → place marker
+      if (dx < 4 && dy < 4 && drawDataRef.current) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const { dist, ux, uy, rx, ry, toScreen } = drawDataRef.current;
+        let closestIdx = -1;
+        let closestD = 25;
+        const check = (xs: number[], ys: number[]) => {
+          for (let i = 0; i < xs.length; i++) {
+            const [sx, sy] = toScreen(xs[i], ys[i]);
+            const d = Math.sqrt((mx - sx) ** 2 + (my - sy) ** 2);
+            if (d < closestD) { closestD = d; closestIdx = i; }
+          }
+        };
+        if (showUser) check(ux, uy);
+        if (showRef) check(rx, ry);
+        if (closestIdx >= 0) {
+          const d = dist[closestIdx];
+          onMarkerPlace(markerDist !== null && Math.abs(markerDist - d) < 12 ? null : d);
+        }
+      }
+    }
     dragRef.current = null;
-  }, []);
+  }, [showUser, showRef, markerDist, onMarkerPlace]);
 
   const isZoomed = zoom > 1.05 || Math.abs(pan.x) > 1 || Math.abs(pan.y) > 1;
 
