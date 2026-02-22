@@ -10,6 +10,7 @@ import json
 import struct
 import re
 import numpy as np
+from typing import Any
 
 
 # ---------------------------------------------------------------------------
@@ -884,49 +885,67 @@ def parse_multipart(body: bytes, content_type: str):
 # Vercel serverless handler
 # ---------------------------------------------------------------------------
 
-class handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        try:
-            content_length = int(self.headers.get("Content-Length", 0))
-            content_type = self.headers.get("Content-Type", "")
+def handler(request: Any) -> dict:
+    """Vercel serverless function handler"""
+    # Handle CORS preflight
+    if request.method == "OPTIONS":
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type",
+            },
+        }
 
-            if content_length > 20 * 1024 * 1024:
-                self._error(413, "Files too large (max 10MB each)")
-                return
+    if request.method != "POST":
+        return {
+            "statusCode": 405,
+            "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
+            "body": json.dumps({"error": "Method not allowed"}),
+        }
 
-            body = self.rfile.read(content_length)
-            files = parse_multipart(body, content_type)
+    try:
+        content_length = int(request.headers.get("Content-Length", 0))
 
-            user_file = files.get("user_file")
-            ref_file = files.get("ref_file")
+        if content_length > 20 * 1024 * 1024:
+            return {
+                "statusCode": 413,
+                "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
+                "body": json.dumps({"error": "Files too large (max 10MB each)"}),
+            }
 
-            if not user_file or not ref_file:
-                self._error(400, "Both user_file and ref_file are required")
-                return
+        body = request.get_data()
+        content_type = request.headers.get("Content-Type", "")
+        files = parse_multipart(body, content_type)
 
-            result = analyze(user_file, ref_file)
+        user_file = files.get("user_file")
+        ref_file = files.get("ref_file")
 
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            self.wfile.write(json.dumps(result).encode())
+        if not user_file or not ref_file:
+            return {
+                "statusCode": 400,
+                "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
+                "body": json.dumps({"error": "Both user_file and ref_file are required"}),
+            }
 
-        except ValueError as e:
-            self._error(400, str(e))
-        except Exception as e:
-            self._error(500, f"Analysis failed: {str(e)}")
+        result = analyze(user_file, ref_file)
 
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.end_headers()
+        return {
+            "statusCode": 200,
+            "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
+            "body": json.dumps(result),
+        }
 
-    def _error(self, code: int, msg: str):
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(json.dumps({"error": msg}).encode())
+    except ValueError as e:
+        return {
+            "statusCode": 400,
+            "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
+            "body": json.dumps({"error": str(e)}),
+        }
+    except Exception as e:
+        return {
+            "statusCode": 500,
+            "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
+            "body": json.dumps({"error": f"Analysis failed: {str(e)}"}),
+        }
