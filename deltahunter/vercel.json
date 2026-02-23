@@ -1,5 +1,9 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": ".next",
-  "framework": "nextjs"
+  "functions": {
+    "api/analyze/route.py": {
+      "runtime": "@vercel/python@4.5.0",
+      "maxDuration": 30,
+      "memory": 1024
+    }
+  }
 }
