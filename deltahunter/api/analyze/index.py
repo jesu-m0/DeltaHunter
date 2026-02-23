@@ -5,12 +5,10 @@ Supports .ld files from Telemetrick, ACTI, and other MoTeC-compatible loggers.
 Channel data is decoded using the standard header scaling: (raw / scale * 10^(-dec) + shift) * mul.
 """
 
-from http.server import BaseHTTPRequestHandler
 import json
 import struct
 import re
 import numpy as np
-from typing import Any
 
 
 # ---------------------------------------------------------------------------
@@ -885,67 +883,72 @@ def parse_multipart(body: bytes, content_type: str):
 # Vercel serverless handler
 # ---------------------------------------------------------------------------
 
-def handler(request: Any) -> dict:
+def handler(request):
     """Vercel serverless function handler"""
-    # Handle CORS preflight
-    if request.method == "OPTIONS":
-        return {
-            "statusCode": 200,
-            "headers": {
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type",
-            },
-        }
-
-    if request.method != "POST":
-        return {
-            "statusCode": 405,
-            "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
-            "body": json.dumps({"error": "Method not allowed"}),
-        }
-
     try:
-        content_length = int(request.headers.get("Content-Length", 0))
-
-        if content_length > 20 * 1024 * 1024:
+        # Handle CORS preflight
+        if request.method == 'OPTIONS':
             return {
-                "statusCode": 413,
-                "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
-                "body": json.dumps({"error": "Files too large (max 10MB each)"}),
+                'statusCode': 200,
+                'headers': {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type',
+                },
             }
 
+        if request.method != 'POST':
+            return {
+                'statusCode': 405,
+                'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+                'body': json.dumps({'error': 'Method not allowed'}),
+            }
+
+        # Get content length
+        content_length = int(request.headers.get('Content-Length', 0))
+        if content_length > 20 * 1024 * 1024:
+            return {
+                'statusCode': 413,
+                'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+                'body': json.dumps({'error': 'Files too large (max 20MB each)'}),
+            }
+
+        # Get body and content type
         body = request.get_data()
-        content_type = request.headers.get("Content-Type", "")
+        content_type = request.headers.get('Content-Type', '')
+
+        # Parse multipart
         files = parse_multipart(body, content_type)
 
-        user_file = files.get("user_file")
-        ref_file = files.get("ref_file")
+        user_file = files.get('user_file')
+        ref_file = files.get('ref_file')
 
         if not user_file or not ref_file:
             return {
-                "statusCode": 400,
-                "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
-                "body": json.dumps({"error": "Both user_file and ref_file are required"}),
+                'statusCode': 400,
+                'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+                'body': json.dumps({'error': 'Both user_file and ref_file are required'}),
             }
 
+        # Run analysis
         result = analyze(user_file, ref_file)
 
         return {
-            "statusCode": 200,
-            "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
-            "body": json.dumps(result),
+            'statusCode': 200,
+            'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+            'body': json.dumps(result, default=str),
         }
 
     except ValueError as e:
         return {
-            "statusCode": 400,
-            "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
-            "body": json.dumps({"error": str(e)}),
+            'statusCode': 400,
+            'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+            'body': json.dumps({'error': str(e)}),
         }
     except Exception as e:
         return {
-            "statusCode": 500,
-            "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
-            "body": json.dumps({"error": f"Analysis failed: {str(e)}"}),
+            'statusCode': 500,
+            'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+            'body': json.dumps({'error': f'Analysis failed: {str(e)}'}),
         }
+
