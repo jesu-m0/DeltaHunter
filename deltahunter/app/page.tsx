@@ -20,15 +20,29 @@ export default function Home() {
     setError(null);
 
     try {
-      const form = new FormData();
-      form.append("user_file", userFiles.ld);
-      form.append("ref_file", refFiles.ld);
-      if (userFiles.ldx) form.append("user_ldx", userFiles.ldx);
-      if (refFiles.ldx) form.append("ref_ldx", refFiles.ldx);
+      const uploadFile = async (file: File): Promise<string> => {
+        const res = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "x-filename": file.name },
+          body: file,
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ error: "Upload failed" }));
+          throw new Error(body.error || `Upload failed: ${res.status}`);
+        }
+        const { url } = await res.json();
+        return url;
+      };
+
+      const [userUrl, refUrl] = await Promise.all([
+        uploadFile(userFiles.ld),
+        uploadFile(refFiles.ld),
+      ]);
 
       const res = await fetch("/api/analyze", {
         method: "POST",
-        body: form,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_url: userUrl, ref_url: refUrl }),
       });
 
       if (!res.ok) {
@@ -67,7 +81,7 @@ export default function Home() {
           <br />
           Drop .ld + .ldx together, or just the .ld file.
           <br />
-          Files are processed in-memory and never stored.
+          Files are temporarily uploaded for processing and automatically deleted afterward.
         </p>
       </div>
     </main>
