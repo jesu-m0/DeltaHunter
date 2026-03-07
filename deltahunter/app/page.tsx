@@ -4,11 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import UploadZone from "@/components/UploadZone";
 import { useAnalysisStore } from "@/lib/store";
-import type { AnalysisResponse } from "@/lib/types";
+import type { AnalysisResponse, ParsedSession } from "@/lib/types";
 
 export default function Home() {
   const router = useRouter();
   const setData = useAnalysisStore((s) => s.setData);
+  const setParsed = useAnalysisStore((s) => s.setParsed);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,16 +42,20 @@ export default function Home() {
       };
 
       // Step 1: Parse both files in parallel (each request carries only one file)
-      const [userLap, refLap] = await Promise.all([
-        parseLap(userFiles.ld),
-        parseLap(refFiles.ld),
-      ]);
+      const [userSession, refSession]: [ParsedSession, ParsedSession] =
+        await Promise.all([
+          parseLap(userFiles.ld),
+          parseLap(refFiles.ld),
+        ]);
 
-      // Step 2: Compare the parsed laps (JSON only, no binary files)
+      // Store parsed sessions for later re-comparison with different laps
+      setParsed(userSession, refSession);
+
+      // Step 2: Compare the best laps (JSON only, no binary files)
       const res = await fetch("/api/analyze/compare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_lap: userLap, ref_lap: refLap }),
+        body: JSON.stringify({ user_lap: userSession, ref_lap: refSession }),
       });
 
       if (!res.ok) {

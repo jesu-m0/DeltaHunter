@@ -11,7 +11,9 @@ import SpeedChart from "@/components/SpeedChart";
 import DeltaChart from "@/components/DeltaChart";
 import ThrottleChart from "@/components/ThrottleChart";
 import BrakeChart from "@/components/BrakeChart";
+import TrailBrakeChart from "@/components/TrailBrakeChart";
 import DriverToggle from "@/components/DriverToggle";
+import LapSelector from "@/components/LapSelector";
 import Findings from "@/components/Findings";
 
 function formatLapTime(seconds: number): string {
@@ -31,6 +33,14 @@ export default function AnalysisPage() {
   const setShowRef = useAnalysisStore((s) => s.setShowRef);
   const markerDist = useAnalysisStore((s) => s.markerDist);
   const setMarkerDist = useAnalysisStore((s) => s.setMarkerDist);
+  const parsedUser = useAnalysisStore((s) => s.parsedUser);
+  const parsedRef = useAnalysisStore((s) => s.parsedRef);
+  const userLapIndex = useAnalysisStore((s) => s.userLapIndex);
+  const refLapIndex = useAnalysisStore((s) => s.refLapIndex);
+  const setUserLapIndex = useAnalysisStore((s) => s.setUserLapIndex);
+  const setRefLapIndex = useAnalysisStore((s) => s.setRefLapIndex);
+  const recompare = useAnalysisStore((s) => s.recompare);
+  const comparing = useAnalysisStore((s) => s.comparing);
 
   useEffect(() => {
     if (!data) router.replace("/");
@@ -137,6 +147,41 @@ export default function AnalysisPage() {
           />
         )}
 
+        {/* Lap selectors */}
+        {parsedUser && parsedRef && (parsedUser.laps.length > 1 || parsedRef.laps.length > 1) ? (
+          <div className="bg-surface rounded-xl border border-border p-4 flex flex-wrap items-center gap-4">
+            <span className="text-xs text-txt-dim uppercase tracking-wider font-semibold">Lap</span>
+            {parsedUser && (
+              <LapSelector
+                label={meta.user_driver}
+                color="user"
+                session={parsedUser}
+                selectedIndex={userLapIndex >= 0 ? userLapIndex : parsedUser.best_index}
+                onChange={(i) => { setUserLapIndex(i); }}
+                disabled={comparing}
+              />
+            )}
+            {parsedRef && (
+              <LapSelector
+                label={meta.ref_driver}
+                color="ref"
+                session={parsedRef}
+                selectedIndex={refLapIndex >= 0 ? refLapIndex : parsedRef.best_index}
+                onChange={(i) => { setRefLapIndex(i); }}
+                disabled={comparing}
+              />
+            )}
+            <button
+              onClick={() => recompare()}
+              disabled={comparing}
+              className="ml-auto px-4 py-1.5 rounded-lg bg-user/20 text-user text-xs font-semibold
+                hover:bg-user/30 transition-colors disabled:opacity-50"
+            >
+              {comparing ? "Comparing..." : "Compare"}
+            </button>
+          </div>
+        ) : null}
+
         {/* Controls */}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <SectorButtons
@@ -213,6 +258,25 @@ export default function AnalysisPage() {
                 onMarkerPlace={setMarkerDist}
               />
             </div>
+          </div>
+
+          <div className="bg-surface rounded-xl border border-border p-4">
+            <h2 className="text-xs font-semibold text-txt-dim uppercase tracking-wider mb-1">
+              Trail braking
+            </h2>
+            <p className="text-[11px] text-txt-dim/70 mb-2">
+              Solid line = brake %, dashed line = steering angle. Shaded zones = trail braking (braking while turning).
+              More trail braking usually means better corner entry speed.
+            </p>
+            <TrailBrakeChart
+              chart={chart}
+              sectors={sectors}
+              activeSector={activeSector}
+              showUser={showUser}
+              showRef={showRef}
+              markerDist={markerDist}
+              onMarkerPlace={setMarkerDist}
+            />
           </div>
         </div>
 

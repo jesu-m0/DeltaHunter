@@ -24,7 +24,7 @@ export interface Padding {
 export const DEFAULT_PADDING: Padding = {
   top: 30,
   right: 16,
-  bottom: 36,
+  bottom: 44,
   left: 56,
 };
 
@@ -106,7 +106,7 @@ export function drawGrid(
   ctx.fillStyle = COLORS.txtDim;
   ctx.font = '10px "Outfit", sans-serif';
   ctx.textAlign = "center";
-  ctx.fillText(xLabel, pad.left + plotW / 2, h - 4);
+  ctx.fillText(xLabel, pad.left + plotW / 2, h - 8);
 
   ctx.save();
   ctx.translate(12, pad.top + plotH / 2);

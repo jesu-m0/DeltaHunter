@@ -193,241 +193,184 @@ def parse_header(buf: bytes):
 # Lap detection and extraction
 # ---------------------------------------------------------------------------
 
-def extract_best_lap(channels: dict):
-    """Find the best (fastest complete) lap and return channel slices."""
+def extract_all_laps(channels: dict):
+    """Extract all complete laps from the session. Returns (laps_list, best_index)."""
     # --- Lap number channel ---
-    # Try specific names first, then fallback
     lap_data, lap_freq = None, 0
     for kw in [("lap", "number"), ("lap", "count"), ("session", "lap", "count")]:
-        lap_data, lap_freq = get_channel_data(channels,*kw)
+        lap_data, lap_freq = get_channel_data(channels, *kw)
         if lap_data is not None:
             break
     if lap_data is None:
-        # Last resort: find any channel with "lap" that looks like a counter
         for name, ch in channels.items():
             lower = name.lower()
             if "lap" in lower and ("num" in lower or "count" in lower or lower == "lap number"):
-                lap_data, lap_freq = get_channel_data(channels,name)
+                lap_data, lap_freq = get_channel_data(channels, name)
                 if lap_data is not None:
                     break
 
     # --- Distance channel ---
-    dist_data, dist_freq = get_channel_data(channels,"lap", "dist")
+    dist_data, dist_freq = get_channel_data(channels, "lap", "dist")
     if dist_data is None:
-        dist_data, dist_freq = get_channel_data(channels,"distance")
+        dist_data, dist_freq = get_channel_data(channels, "distance")
 
     # --- Speed channel ---
-    speed_data, speed_freq = get_channel_data(channels,"ground", "speed")
+    speed_data, speed_freq = get_channel_data(channels, "ground", "speed")
     if speed_data is None:
-        speed_data, speed_freq = get_channel_data(channels,"speed")
+        speed_data, speed_freq = get_channel_data(channels, "speed")
     if speed_data is None:
-        speed_data, speed_freq = get_channel_data(channels,"gnd", "spd")
-
+        speed_data, speed_freq = get_channel_data(channels, "gnd", "spd")
     if speed_data is None:
         raise ValueError("Missing essential channel: speed")
 
-    # --- Compute distance from speed if no distance channel ---
-    if dist_data is None and speed_data is not None:
-        print(f"[DEBUG] No distance channel found, computing from speed")
-        print(f"[DEBUG] Speed stats: min={speed_data.min():.2f}, max={speed_data.max():.2f}, mean={speed_data.mean():.2f}, freq={speed_freq}")
+    # --- Compute distance from speed if needed ---
+    if dist_data is None:
         dt = 1.0 / speed_freq if speed_freq > 0 else 1.0 / 20.0
-        # speed is kph, convert to m/s and integrate
         speed_ms = speed_data / 3.6
         dist_data = np.cumsum(speed_ms * dt)
         dist_freq = speed_freq
-        print(f"[DEBUG] Computed distance: total={dist_data[-1]:.1f}m")
-
-    if dist_data is None:
-        raise ValueError("Missing essential channels (could not determine distance)")
 
     # --- Detect lap boundaries ---
-    # Priority: 1) distance resets, 2) Lap Time channel resets, 3) Session Lap Count changes
-    # The "Lap Number" channel in AC/Telemetrick counts *completed* laps,
-    # so it stays at 0 for the entire first lap.  Distance resets and Lap Time
-    # resets are the reliable signals.
-    print(f"[DEBUG] Resolved: dist_freq={dist_freq}, speed_freq={speed_freq}")
-    print(f"[DEBUG] Samples: dist={len(dist_data)}, speed={len(speed_data)}")
-
-    # 1) Try distance resets (works when Lap Distance channel exists)
     resets = [0]
     for i in range(1, len(dist_data)):
         if dist_data[i] < dist_data[i - 1] - 50:
             resets.append(i)
 
-    # 2) If no distance resets, try Lap Time channel resets
     if len(resets) <= 1:
         lt_data, lt_freq = get_channel_data(channels, "lap", "time")
         if lt_data is not None and lt_freq > 0:
             resets = [0]
-            # Convert Lap Time indices to dist_data indices
             for i in range(1, len(lt_data)):
                 if lt_data[i] < lt_data[i - 1] - 1.0:
-                    # Map from lt_data index to dist_data index
                     di = int(i * dist_freq / lt_freq)
-                    if di > 0 and di < len(dist_data):
+                    if 0 < di < len(dist_data):
                         resets.append(di)
-            if len(resets) > 1:
-                print(f"[DEBUG] Using Lap Time resets for lap boundaries")
 
-    # 3) If still no splits, try Session Lap Count / Lap Number changes
     if len(resets) <= 1 and lap_data is not None:
         resets = [0]
         for i in range(1, len(lap_data)):
             if lap_data[i] != lap_data[i - 1]:
                 di = int(i * dist_freq / lap_freq)
-                if di > 0 and di < len(dist_data):
+                if 0 < di < len(dist_data):
                     resets.append(di)
-        if len(resets) > 1:
-            print(f"[DEBUG] Using Lap Number changes for lap boundaries")
 
-    laps = {}
-    lap_freq = dist_freq
+    raw_laps = {}
+    base_freq = dist_freq
     for idx in range(len(resets)):
         s = resets[idx]
-        # The reset sample belongs to the NEXT lap, so end one sample before it
         e = (resets[idx + 1] - 1) if idx + 1 < len(resets) else len(dist_data) - 1
-        laps[idx] = {"start": s, "end": e, "freq": lap_freq}
+        raw_laps[idx] = {"start": s, "end": e, "freq": base_freq}
 
-    print(f"[DEBUG] Split into {len(laps)} laps by resets at samples {resets}")
-
-    if len(laps) == 0:
+    if len(raw_laps) == 0:
         raise ValueError("No laps detected in telemetry data")
 
-    # Calculate lap distances using peak distance within each lap segment
-    # (handles distance resets that occur at lap boundaries)
+    # Calculate distances and filter complete laps
     max_dist = 0
-    for ln, info in laps.items():
-        s = int(info["start"] * dist_freq / lap_freq)
-        e = int(info["end"] * dist_freq / lap_freq)
-        e = min(e, len(dist_data) - 1)
-        s = min(s, len(dist_data) - 1)
+    for ln, info in raw_laps.items():
+        s = min(int(info["start"]), len(dist_data) - 1)
+        e = min(int(info["end"]), len(dist_data) - 1)
         dist_slice = dist_data[s : e + 1]
         lap_dist = float(np.max(dist_slice)) - float(np.min(dist_slice)) if len(dist_slice) > 0 else 0
         info["distance"] = lap_dist
         if lap_dist > max_dist:
             max_dist = lap_dist
 
-    lap_dists = [(ln, round(info["distance"])) for ln, info in sorted(laps.items())[:10]]
-    print(f"[DEBUG] Lap distances: {lap_dists}")
-
-    # Filter complete laps (>90% of max distance)
     threshold = max_dist * 0.9
-    complete_laps = {
-        ln: info for ln, info in laps.items() if info["distance"] > threshold
-    }
-
+    complete_laps = {ln: info for ln, info in raw_laps.items() if info["distance"] > threshold}
     if len(complete_laps) == 0:
-        complete_laps = laps
+        complete_laps = raw_laps
 
-    # Find fastest lap by sample count (proportional to time)
-    best_lap = None
-    best_samples = float("inf")
-    for ln, info in complete_laps.items():
-        n_samples = info["end"] - info["start"]
-        if n_samples < best_samples and n_samples > 0:
-            best_samples = n_samples
-            best_lap = ln
-
-    if best_lap is None:
-        best_lap = list(complete_laps.keys())[0]
-
-    info = complete_laps[best_lap]
-    lap_time = best_samples / lap_freq
-
-    # Extract all channels for this lap
-    def extract(data, freq):
-        s = int(info["start"] * freq / lap_freq)
-        e = int(info["end"] * freq / lap_freq)
-        s = max(0, min(s, len(data) - 1))
-        e = max(s + 1, min(e, len(data)))
-        return data[s:e]
-
-    result = {"lap_time": lap_time, "lap_number": best_lap}
-
-    # Speed
-    result["speed"] = extract(speed_data, speed_freq)
-
-    # Distance — unwrap resets so distance is monotonically increasing
-    raw_dist = extract(dist_data, dist_freq)
-    if len(raw_dist) > 1:
-        # Unwrap distance resets: when distance drops, add the previous max
-        unwrapped = np.empty_like(raw_dist)
-        unwrapped[0] = raw_dist[0]
-        offset = 0.0
-        for i in range(1, len(raw_dist)):
-            if raw_dist[i] < raw_dist[i - 1] - 50:
-                offset += raw_dist[i - 1]
-            unwrapped[i] = raw_dist[i] + offset
-        raw_dist = unwrapped
-    if len(raw_dist) > 0:
-        raw_dist = raw_dist - raw_dist[0]
-    result["dist"] = raw_dist
-
-    # Throttle
-    thr, thr_f = get_channel_data(channels,"throttle", "pos")
+    # --- Resolve channels once ---
+    thr, thr_f = get_channel_data(channels, "throttle", "pos")
     if thr is None:
-        thr, thr_f = get_channel_data(channels,"throttle")
+        thr, thr_f = get_channel_data(channels, "throttle")
     if thr is None:
-        thr, thr_f = get_channel_data(channels,"thr")
-    if thr is not None:
-        result["throttle"] = extract(thr, thr_f)
-    else:
-        result["throttle"] = np.zeros_like(result["speed"])
+        thr, thr_f = get_channel_data(channels, "thr")
 
-    # Brake
     brk_name, brk_ch = find_channel(channels, "brake", "pos")
     if brk_ch is None:
         brk_name, brk_ch = find_channel(channels, "brake")
-        # Skip "Brake Bias" / "Brake Temp" — we need actual pedal input
         if brk_name and any(x in brk_name.lower() for x in ["bias", "temp", "torque"]):
             brk_name, brk_ch = None, None
     if brk_ch is None:
         brk_name, brk_ch = find_channel(channels, "brk")
-    if brk_ch is not None:
-        brk = brk_ch["data"].copy()
-        brk_f = brk_ch["freq"]
-        print(f"[DEBUG] Brake channel '{brk_name}': freq={brk_f}, units='{brk_ch['units']}', "
-              f"shift={brk_ch['shift']}, mul={brk_ch['mul']}, scale={brk_ch['scale']}, dec={brk_ch['dec']}, "
-              f"dtype_a=0x{brk_ch['dtype_a']:02x}, dtype_v={brk_ch['dtype_v']}")
-        print(f"[DEBUG] Brake raw data: min={brk.min():.4f}, max={brk.max():.4f}, mean={brk.mean():.4f}, std={brk.std():.4f}, samples={len(brk)}")
-        print(f"[DEBUG] Brake first 20 values: {brk[:20].tolist()}")
-        result["brake"] = extract(brk, brk_f)
-    else:
-        print(f"[DEBUG] No brake channel found!")
-        result["brake"] = np.zeros_like(result["speed"])
+    brk = brk_ch["data"].copy() if brk_ch else None
+    brk_f = brk_ch["freq"] if brk_ch else 0
 
-    # Gear
-    gear, gear_f = get_channel_data(channels,"gear")
-    if gear is not None:
-        result["gear"] = extract(gear, gear_f)
-    else:
-        result["gear"] = np.ones_like(result["speed"])
+    gear, gear_f = get_channel_data(channels, "gear")
+    steer, steer_f = get_channel_data(channels, "steer")
 
-    # Steering
-    steer, steer_f = get_channel_data(channels,"steer")
-    if steer is not None:
-        result["steering"] = extract(steer, steer_f)
-    else:
-        result["steering"] = np.zeros_like(result["speed"])
+    cx, cx_f = get_channel_data(channels, "car", "coord", "x")
+    cy, cy_f = get_channel_data(channels, "car", "coord", "y")
+    if cx is None or cy is None:
+        cx, cx_f = get_channel_data(channels, "pos", "x")
+        cy, cy_f = get_channel_data(channels, "pos", "y")
 
-    # Coordinates XY
-    cx, cx_f = get_channel_data(channels,"car", "coord", "x")
-    cy, cy_f = get_channel_data(channels,"car", "coord", "y")
-    if cx is not None and cy is not None:
-        result["coord_x"] = extract(cx, cx_f)
-        result["coord_y"] = extract(cy, cy_f)
-    else:
-        # Fallback: try pos x / pos y
-        cx, cx_f = get_channel_data(channels,"pos", "x")
-        cy, cy_f = get_channel_data(channels,"pos", "y")
+    # --- Extract each complete lap ---
+    results = []
+    best_index = 0
+    best_samples = float("inf")
+
+    for lap_idx, (ln, info) in enumerate(sorted(complete_laps.items())):
+        n_samples = info["end"] - info["start"]
+        if n_samples <= 0:
+            continue
+        lap_time = n_samples / base_freq
+
+        def extract(data, freq):
+            s = int(info["start"] * freq / base_freq)
+            e = int(info["end"] * freq / base_freq)
+            s = max(0, min(s, len(data) - 1))
+            e = max(s + 1, min(e, len(data)))
+            return data[s:e]
+
+        lap_result = {"lap_time": lap_time, "lap_number": ln}
+
+        lap_result["speed"] = extract(speed_data, speed_freq)
+
+        # Distance — unwrap resets
+        raw_d = extract(dist_data, dist_freq)
+        if len(raw_d) > 1:
+            unwrapped = np.empty_like(raw_d)
+            unwrapped[0] = raw_d[0]
+            offset = 0.0
+            for i in range(1, len(raw_d)):
+                if raw_d[i] < raw_d[i - 1] - 50:
+                    offset += raw_d[i - 1]
+                unwrapped[i] = raw_d[i] + offset
+            raw_d = unwrapped
+        if len(raw_d) > 0:
+            raw_d = raw_d - raw_d[0]
+        lap_result["dist"] = raw_d
+
+        lap_result["throttle"] = extract(thr, thr_f) if thr is not None else np.zeros_like(lap_result["speed"])
+        lap_result["brake"] = extract(brk, brk_f) if brk is not None else np.zeros_like(lap_result["speed"])
+        lap_result["gear"] = extract(gear, gear_f) if gear is not None else np.ones_like(lap_result["speed"])
+        lap_result["steering"] = extract(steer, steer_f) if steer is not None else np.zeros_like(lap_result["speed"])
+
         if cx is not None and cy is not None:
-            result["coord_x"] = extract(cx, cx_f)
-            result["coord_y"] = extract(cy, cy_f)
+            lap_result["coord_x"] = extract(cx, cx_f)
+            lap_result["coord_y"] = extract(cy, cy_f)
         else:
-            result["coord_x"] = None
-            result["coord_y"] = None
+            lap_result["coord_x"] = None
+            lap_result["coord_y"] = None
 
-    return result
+        if n_samples < best_samples:
+            best_samples = n_samples
+            best_index = len(results)
+
+        results.append(lap_result)
+
+    if len(results) == 0:
+        raise ValueError("No complete laps found")
+
+    return results, best_index
+
+
+def extract_best_lap(channels: dict):
+    """Legacy wrapper — returns only the best lap."""
+    laps, best_idx = extract_all_laps(channels)
+    return laps[best_idx]
 
 
 # ---------------------------------------------------------------------------
@@ -614,35 +557,48 @@ def calc_time_delta(user_speed: np.ndarray, ref_speed: np.ndarray, dist: np.ndar
 # Tips generation
 # ---------------------------------------------------------------------------
 
-def generate_tip(sector_name: str, user_min_speed: float, ref_min_speed: float) -> str:
+def generate_tip(sector_name: str, user_min_speed: float, ref_min_speed: float,
+                  user_trail: float = 0.0, ref_trail: float = 0.0) -> str:
     delta_speed = ref_min_speed - user_min_speed
+    trail_diff = ref_trail - user_trail
+
+    trail_tip = ""
+    if trail_diff > 20:
+        trail_tip = (
+            f" Reference trails the brake {trail_diff:.0f}% more into the corner. "
+            f"Try maintaining light brake pressure while turning in."
+        )
+    elif trail_diff < -20:
+        trail_tip = (
+            f" You trail brake more than the reference here — "
+            f"make sure you're not overloading the front tyres."
+        )
 
     if delta_speed > 15:
         return (
             f"Huge gap: {delta_speed:.0f} kph less minimum speed. "
             f"You're braking too hard. Try braking a bit earlier with less pressure, "
-            f"and keep some brake while turning (trail braking)."
+            f"and keep some brake while turning (trail braking).{trail_tip}"
         )
     elif delta_speed > 8:
         return (
             f"You lose {delta_speed:.0f} kph at the apex. "
-            f"Brake a bit earlier with less pressure and carry more speed through the corner. "
-            f"Trail braking will help load the front axle."
+            f"Brake a bit earlier with less pressure and carry more speed through the corner.{trail_tip}"
         )
     elif delta_speed > 3:
         return (
             f"Moderate gap: {delta_speed:.0f} kph. "
-            f"A small braking and line adjustment can fix this. Study the reference line."
+            f"A small braking and line adjustment can fix this.{trail_tip}"
         )
     elif delta_speed > 0:
         return (
             f"Minimal difference ({delta_speed:.0f} kph). "
-            f"This sector is pretty good. Focus on other sectors first."
+            f"This sector is pretty good. Focus on other sectors first.{trail_tip}"
         )
     else:
         return (
             f"You're faster here by {-delta_speed:.0f} kph! "
-            f"Great job on this corner. Keep it consistent."
+            f"Great job on this corner. Keep it consistent.{trail_tip}"
         )
 
 
@@ -651,7 +607,7 @@ def generate_tip(sector_name: str, user_min_speed: float, ref_min_speed: float) 
 # ---------------------------------------------------------------------------
 
 def parse_single(buf: bytes, label: str = "File") -> dict:
-    """Parse a single .ld file and return serializable lap data."""
+    """Parse a single .ld file and return all laps as serializable data."""
     stripped = buf.lstrip()[:10]
     if stripped.startswith(b"<?xml") or stripped.startswith(b"<LDXFile"):
         raise ValueError(
@@ -661,27 +617,35 @@ def parse_single(buf: bytes, label: str = "File") -> dict:
 
     channels = parse_channels(buf)
     driver, car, track = parse_header(buf)
-    lap = extract_best_lap(channels)
+    all_laps, best_index = extract_all_laps(channels)
 
     def arr_to_list(arr):
         if arr is None:
             return None
         return [round(float(v), 4) for v in arr]
 
+    laps = []
+    for i, lap in enumerate(all_laps):
+        laps.append({
+            "lap_time": float(lap["lap_time"]),
+            "lap_number": int(lap["lap_number"]),
+            "is_best": i == best_index,
+            "speed": arr_to_list(lap["speed"]),
+            "dist": arr_to_list(lap["dist"]),
+            "throttle": arr_to_list(lap["throttle"]),
+            "brake": arr_to_list(lap["brake"]),
+            "gear": arr_to_list(lap["gear"]),
+            "steering": arr_to_list(lap["steering"]),
+            "coord_x": arr_to_list(lap.get("coord_x")),
+            "coord_y": arr_to_list(lap.get("coord_y")),
+        })
+
     return {
         "driver": driver,
         "car": car,
         "track": track,
-        "lap_time": float(lap["lap_time"]),
-        "lap_number": int(lap["lap_number"]),
-        "speed": arr_to_list(lap["speed"]),
-        "dist": arr_to_list(lap["dist"]),
-        "throttle": arr_to_list(lap["throttle"]),
-        "brake": arr_to_list(lap["brake"]),
-        "gear": arr_to_list(lap["gear"]),
-        "steering": arr_to_list(lap["steering"]),
-        "coord_x": arr_to_list(lap.get("coord_x")),
-        "coord_y": arr_to_list(lap.get("coord_y")),
+        "best_index": best_index,
+        "laps": laps,
     }
 
 
@@ -706,10 +670,28 @@ def _lap_from_parsed(parsed: dict) -> dict:
     }
 
 
-def analyze_from_parsed(user_parsed: dict, ref_parsed: dict) -> dict:
-    """Run comparison analysis from pre-parsed lap data."""
-    user_lap = _lap_from_parsed(user_parsed)
-    ref_lap = _lap_from_parsed(ref_parsed)
+def analyze_from_parsed(user_parsed: dict, ref_parsed: dict,
+                        user_lap_index: int = -1, ref_lap_index: int = -1) -> dict:
+    """Run comparison analysis from pre-parsed session data.
+
+    Supports both old single-lap format and new multi-lap format.
+    user_lap_index/ref_lap_index: -1 means use best lap.
+    """
+    # Support new multi-lap format
+    if "laps" in user_parsed:
+        idx = user_lap_index if user_lap_index >= 0 else user_parsed.get("best_index", 0)
+        user_lap_data = user_parsed["laps"][idx]
+    else:
+        user_lap_data = user_parsed
+
+    if "laps" in ref_parsed:
+        idx = ref_lap_index if ref_lap_index >= 0 else ref_parsed.get("best_index", 0)
+        ref_lap_data = ref_parsed["laps"][idx]
+    else:
+        ref_lap_data = ref_parsed
+
+    user_lap = _lap_from_parsed(user_lap_data)
+    ref_lap = _lap_from_parsed(ref_lap_data)
 
     user_driver = user_parsed.get("driver", "Driver")
     user_car = user_parsed.get("car", "")
@@ -797,7 +779,22 @@ def _compare_laps(
         delta = float(time_delta[idx[-1]] - time_delta[idx[0]])
         u_min = float(np.min(user_chart["speed"][idx]))
         r_min = float(np.min(ref_chart["speed"][idx]))
-        tip = generate_tip(sector_names[i], u_min, r_min)
+
+        # Trail braking: % of braking zone where brake > 5% AND |steering| > 5 deg
+        u_brk_s = user_chart["brake"][idx] if user_chart["brake"] is not None else np.zeros(len(idx))
+        u_str_s = user_chart["steering"][idx] if user_chart["steering"] is not None else np.zeros(len(idx))
+        r_brk_s = ref_chart["brake"][idx] if ref_chart["brake"] is not None else np.zeros(len(idx))
+        r_str_s = ref_chart["steering"][idx] if ref_chart["steering"] is not None else np.zeros(len(idx))
+
+        u_braking = u_brk_s > 5
+        u_trail = u_braking & (np.abs(u_str_s) > 5)
+        u_trail_score = float(np.sum(u_trail) / max(np.sum(u_braking), 1) * 100)
+
+        r_braking = r_brk_s > 5
+        r_trail = r_braking & (np.abs(r_str_s) > 5)
+        r_trail_score = float(np.sum(r_trail) / max(np.sum(r_braking), 1) * 100)
+
+        tip = generate_tip(sector_names[i], u_min, r_min, u_trail_score, r_trail_score)
         sectors.append({
             "id": i,
             "name": sector_names[i],
@@ -806,6 +803,8 @@ def _compare_laps(
             "delta": round(delta, 3),
             "user_min_speed": round(u_min, 1),
             "ref_min_speed": round(r_min, 1),
+            "user_trail_score": round(u_trail_score, 1),
+            "ref_trail_score": round(r_trail_score, 1),
             "tip": tip,
         })
 
@@ -848,6 +847,8 @@ def _compare_laps(
             "ref_brake": to_list(ref_chart["brake"]),
             "user_gear": to_list(user_chart["gear"]),
             "ref_gear": to_list(ref_chart["gear"]),
+            "user_steering": to_list(user_chart["steering"]),
+            "ref_steering": to_list(ref_chart["steering"]),
             "delta_speed": to_list(user_chart["speed"] - ref_chart["speed"]
                                     if user_chart["speed"] is not None
                                     else None),
@@ -867,6 +868,8 @@ def _compare_laps(
             "ref_brake": to_list_hd(ref_hd["brake"]),
             "user_throttle": to_list_hd(user_hd["throttle"]),
             "ref_throttle": to_list_hd(ref_hd["throttle"]),
+            "user_steering": to_list_hd(user_hd["steering"]),
+            "ref_steering": to_list_hd(ref_hd["steering"]),
         },
         "sectors": sectors,
     }
@@ -961,7 +964,10 @@ class handler(BaseHTTPRequestHandler):
                 if not user_parsed or not ref_parsed:
                     self._error(400, "Both user_lap and ref_lap are required")
                     return
-                result = analyze_from_parsed(user_parsed, ref_parsed)
+                user_lap_index = payload.get("user_lap_index", -1)
+                ref_lap_index = payload.get("ref_lap_index", -1)
+                result = analyze_from_parsed(user_parsed, ref_parsed,
+                                             user_lap_index, ref_lap_index)
 
             else:
                 # Legacy: both files in one request

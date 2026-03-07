@@ -59,7 +59,7 @@ export default function SectorDetail({
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-4 gap-4 px-5 py-3 border-b border-border/50">
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-4 px-5 py-3 border-b border-border/50">
         <div>
           <div className="text-[10px] uppercase tracking-wider text-txt-dim mb-0.5">Delta</div>
           <div className={`font-mono text-sm font-semibold ${sector.delta > 0 ? "text-loss" : "text-gain"}`}>
@@ -82,6 +82,18 @@ export default function SectorDetail({
           <div className="text-[10px] uppercase tracking-wider text-txt-dim mb-0.5">Speed diff</div>
           <div className={`font-mono text-sm font-semibold ${diff > 0 ? "text-loss" : "text-gain"}`}>
             {diff > 0 ? "-" : "+"}{Math.abs(diff).toFixed(0)} kph
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-txt-dim mb-0.5">Your trail brake</div>
+          <div className="font-mono text-sm font-semibold text-user">
+            {sector.user_trail_score?.toFixed(0) ?? 0}%
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-txt-dim mb-0.5">Ref trail brake</div>
+          <div className="font-mono text-sm font-semibold text-ref">
+            {sector.ref_trail_score?.toFixed(0) ?? 0}%
           </div>
         </div>
       </div>

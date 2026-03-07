@@ -1,3 +1,25 @@
+export interface ParsedLap {
+  lap_time: number;
+  lap_number: number;
+  is_best: boolean;
+  speed: number[];
+  dist: number[];
+  throttle: number[];
+  brake: number[];
+  gear: number[];
+  steering: number[];
+  coord_x: number[] | null;
+  coord_y: number[] | null;
+}
+
+export interface ParsedSession {
+  driver: string;
+  car: string;
+  track: string;
+  best_index: number;
+  laps: ParsedLap[];
+}
+
 export interface SectorData {
   id: number;
   name: string;
@@ -6,6 +28,8 @@ export interface SectorData {
   delta: number;
   user_min_speed: number;
   ref_min_speed: number;
+  user_trail_score: number;
+  ref_trail_score: number;
   tip: string;
 }
 
@@ -19,6 +43,8 @@ export interface ChartData {
   ref_brake: number[];
   user_gear: number[];
   ref_gear: number[];
+  user_steering: number[];
+  ref_steering: number[];
   delta_speed: number[];
   time_delta: number[];
   map_x: number[];
@@ -37,6 +63,8 @@ export interface HdData {
   ref_brake: number[];
   user_throttle: number[];
   ref_throttle: number[];
+  user_steering: number[];
+  ref_steering: number[];
 }
 
 export interface MetaData {

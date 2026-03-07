@@ -47,7 +47,10 @@ class DevHandler(BaseHTTPRequestHandler):
                 if not user_parsed or not ref_parsed:
                     self._error(400, "Both user_lap and ref_lap are required")
                     return
-                result = analyze_from_parsed(user_parsed, ref_parsed)
+                user_lap_index = payload.get("user_lap_index", -1)
+                ref_lap_index = payload.get("ref_lap_index", -1)
+                result = analyze_from_parsed(user_parsed, ref_parsed,
+                                             user_lap_index, ref_lap_index)
 
             else:
                 # Legacy: both files in one request
