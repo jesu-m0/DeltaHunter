@@ -25,18 +25,32 @@ export default function Home() {
         return new Response(stream).blob();
       };
 
-      const [userGz, refGz] = await Promise.all([
-        compress(userFiles.ld),
-        compress(refFiles.ld),
+      const parseLap = async (file: File) => {
+        const gz = await compress(file);
+        const form = new FormData();
+        form.append("file", gz, file.name);
+        const res = await fetch("/api/analyze/parse", {
+          method: "POST",
+          body: form,
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ error: "Parse failed" }));
+          throw new Error(body.error || `Parse failed: ${res.status}`);
+        }
+        return res.json();
+      };
+
+      // Step 1: Parse both files in parallel (each request carries only one file)
+      const [userLap, refLap] = await Promise.all([
+        parseLap(userFiles.ld),
+        parseLap(refFiles.ld),
       ]);
 
-      const form = new FormData();
-      form.append("user_file", userGz, userFiles.ld.name);
-      form.append("ref_file", refGz, refFiles.ld.name);
-
-      const res = await fetch("/api/analyze", {
+      // Step 2: Compare the parsed laps (JSON only, no binary files)
+      const res = await fetch("/api/analyze/compare", {
         method: "POST",
-        body: form,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_lap: userLap, ref_lap: refLap }),
       });
 
       if (!res.ok) {

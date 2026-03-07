@@ -1,6 +1,8 @@
 {
   "rewrites": [
-    { "source": "/api/analyze", "destination": "/api/analyze/route" }
+    { "source": "/api/analyze", "destination": "/api/analyze/route" },
+    { "source": "/api/analyze/parse", "destination": "/api/analyze/route" },
+    { "source": "/api/analyze/compare", "destination": "/api/analyze/route" }
   ],
   "functions": {
     "api/analyze/route.py": {

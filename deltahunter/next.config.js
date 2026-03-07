@@ -4,8 +4,8 @@ const nextConfig = {
     if (process.env.NODE_ENV === "development") {
       return [
         {
-          source: "/api/analyze",
-          destination: "http://localhost:5328/api/analyze",
+          source: "/api/analyze/:path*",
+          destination: "http://localhost:5328/api/analyze/:path*",
         },
       ];
     }

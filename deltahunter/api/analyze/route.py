@@ -650,37 +650,89 @@ def generate_tip(sector_name: str, user_min_speed: float, ref_min_speed: float) 
 # Main analysis pipeline
 # ---------------------------------------------------------------------------
 
-def analyze(user_buf: bytes, ref_buf: bytes) -> dict:
-    # Detect .ldx companion files (XML, not telemetry data)
-    for label, buf in [("User", user_buf), ("Reference", ref_buf)]:
-        stripped = buf.lstrip()[:10]
-        if stripped.startswith(b"<?xml") or stripped.startswith(b"<LDXFile"):
-            raise ValueError(
-                f"{label} file appears to be an .ldx (XML) companion file. "
-                "Please upload the .ld telemetry file instead."
-            )
+def parse_single(buf: bytes, label: str = "File") -> dict:
+    """Parse a single .ld file and return serializable lap data."""
+    stripped = buf.lstrip()[:10]
+    if stripped.startswith(b"<?xml") or stripped.startswith(b"<LDXFile"):
+        raise ValueError(
+            f"{label} file appears to be an .ldx (XML) companion file. "
+            "Please upload the .ld telemetry file instead."
+        )
 
-    print(f"[DEBUG] User file: {len(user_buf)} bytes")
-    print(f"[DEBUG] Ref file: {len(ref_buf)} bytes")
+    channels = parse_channels(buf)
+    driver, car, track = parse_header(buf)
+    lap = extract_best_lap(channels)
 
-    user_channels = parse_channels(user_buf)
-    ref_channels = parse_channels(ref_buf)
+    def arr_to_list(arr):
+        if arr is None:
+            return None
+        return [round(float(v), 4) for v in arr]
 
-    print(f"[DEBUG] User channels ({len(user_channels)}): {list(user_channels.keys())}")
-    print(f"[DEBUG] Ref channels ({len(ref_channels)}): {list(ref_channels.keys())}")
+    return {
+        "driver": driver,
+        "car": car,
+        "track": track,
+        "lap_time": float(lap["lap_time"]),
+        "lap_number": int(lap["lap_number"]),
+        "speed": arr_to_list(lap["speed"]),
+        "dist": arr_to_list(lap["dist"]),
+        "throttle": arr_to_list(lap["throttle"]),
+        "brake": arr_to_list(lap["brake"]),
+        "gear": arr_to_list(lap["gear"]),
+        "steering": arr_to_list(lap["steering"]),
+        "coord_x": arr_to_list(lap.get("coord_x")),
+        "coord_y": arr_to_list(lap.get("coord_y")),
+    }
 
-    user_driver, user_car, user_track = parse_header(user_buf)
-    ref_driver, ref_car, ref_track = parse_header(ref_buf)
 
-    print("[DEBUG] --- Extracting user lap ---")
-    user_lap = extract_best_lap(user_channels)
-    print(f"[DEBUG] User lap: time={user_lap['lap_time']:.3f}s, dist range=[{user_lap['dist'][0]:.1f}, {user_lap['dist'][-1]:.1f}]m, samples={len(user_lap['dist'])}")
+def _lap_from_parsed(parsed: dict) -> dict:
+    """Reconstruct numpy lap dict from parsed JSON data."""
+    def to_arr(lst):
+        if lst is None:
+            return None
+        return np.array(lst, dtype=np.float64)
 
-    print("[DEBUG] --- Extracting ref lap ---")
-    ref_lap = extract_best_lap(ref_channels)
-    print(f"[DEBUG] Ref lap: time={ref_lap['lap_time']:.3f}s, dist range=[{ref_lap['dist'][0]:.1f}, {ref_lap['dist'][-1]:.1f}]m, samples={len(ref_lap['dist'])}")
+    return {
+        "lap_time": parsed["lap_time"],
+        "lap_number": parsed["lap_number"],
+        "speed": to_arr(parsed["speed"]),
+        "dist": to_arr(parsed["dist"]),
+        "throttle": to_arr(parsed["throttle"]),
+        "brake": to_arr(parsed["brake"]),
+        "gear": to_arr(parsed["gear"]),
+        "steering": to_arr(parsed["steering"]),
+        "coord_x": to_arr(parsed.get("coord_x")),
+        "coord_y": to_arr(parsed.get("coord_y")),
+    }
 
-    # Create common distance grid (2m resolution for HD, 6m for charts)
+
+def analyze_from_parsed(user_parsed: dict, ref_parsed: dict) -> dict:
+    """Run comparison analysis from pre-parsed lap data."""
+    user_lap = _lap_from_parsed(user_parsed)
+    ref_lap = _lap_from_parsed(ref_parsed)
+
+    user_driver = user_parsed.get("driver", "Driver")
+    user_car = user_parsed.get("car", "")
+    user_track = user_parsed.get("track", "")
+    ref_driver = ref_parsed.get("driver", "Reference")
+    ref_car = ref_parsed.get("car", "")
+    ref_track = ref_parsed.get("track", "")
+
+    return _compare_laps(
+        user_lap, ref_lap,
+        user_driver, ref_driver,
+        user_car, ref_car,
+        user_track, ref_track,
+    )
+
+
+def _compare_laps(
+    user_lap, ref_lap,
+    user_driver, ref_driver,
+    user_car, ref_car,
+    user_track, ref_track,
+) -> dict:
+    """Core comparison logic shared by both analyze paths."""
     max_dist = min(
         float(user_lap["dist"][-1]) if len(user_lap["dist"]) > 0 else 0,
         float(ref_lap["dist"][-1]) if len(ref_lap["dist"]) > 0 else 0,
@@ -696,7 +748,6 @@ def analyze(user_buf: bytes, ref_buf: bytes) -> dict:
     user_chart = interp_to_dist(user_lap, chart_grid)
     ref_chart = interp_to_dist(ref_lap, chart_grid)
 
-    # Align XY coordinates (Procrustes alignment for cross-file comparison)
     has_coords = (
         user_hd["coord_x"] is not None
         and user_hd["coord_y"] is not None
@@ -706,29 +757,23 @@ def analyze(user_buf: bytes, ref_buf: bytes) -> dict:
 
     if has_coords:
         ref_aligned_x, ref_aligned_y = align_xy_procrustes(
-            user_hd["coord_x"],
-            user_hd["coord_y"],
-            ref_hd["coord_x"],
-            ref_hd["coord_y"],
+            user_hd["coord_x"], user_hd["coord_y"],
+            ref_hd["coord_x"], ref_hd["coord_y"],
             hd_grid,
         )
         ref_hd["coord_x"] = ref_aligned_x
         ref_hd["coord_y"] = ref_aligned_y
 
         ref_chart_aligned_x, ref_chart_aligned_y = align_xy_procrustes(
-            user_chart["coord_x"],
-            user_chart["coord_y"],
-            ref_chart["coord_x"],
-            ref_chart["coord_y"],
+            user_chart["coord_x"], user_chart["coord_y"],
+            ref_chart["coord_x"], ref_chart["coord_y"],
             chart_grid,
         )
         ref_chart["coord_x"] = ref_chart_aligned_x
         ref_chart["coord_y"] = ref_chart_aligned_y
 
-    # Calculate time delta
     time_delta = calc_time_delta(user_chart["speed"], ref_chart["speed"], chart_grid)
 
-    # Detect or match sectors
     track_name = user_track or ref_track
     circuit = match_circuit(track_name)
 
@@ -743,38 +788,27 @@ def analyze(user_buf: bytes, ref_buf: bytes) -> dict:
         sector_names = [f"Corner {i + 1}" for i in range(len(raw_sectors))]
         circuit_name = None
 
-    # Build sector info
     sectors = []
     for i, (ss, se) in enumerate(raw_sectors):
-        # Find indices in chart grid
         mask = (chart_grid >= ss) & (chart_grid <= se)
         if not np.any(mask):
             continue
         idx = np.where(mask)[0]
-
-        # Delta for this sector
         delta = float(time_delta[idx[-1]] - time_delta[idx[0]])
-
-        # Min speeds
         u_min = float(np.min(user_chart["speed"][idx]))
         r_min = float(np.min(ref_chart["speed"][idx]))
-
         tip = generate_tip(sector_names[i], u_min, r_min)
+        sectors.append({
+            "id": i,
+            "name": sector_names[i],
+            "start": float(ss),
+            "end": float(se),
+            "delta": round(delta, 3),
+            "user_min_speed": round(u_min, 1),
+            "ref_min_speed": round(r_min, 1),
+            "tip": tip,
+        })
 
-        sectors.append(
-            {
-                "id": i,
-                "name": sector_names[i],
-                "start": float(ss),
-                "end": float(se),
-                "delta": round(delta, 3),
-                "user_min_speed": round(u_min, 1),
-                "ref_min_speed": round(r_min, 1),
-                "tip": tip,
-            }
-        )
-
-    # Build map coordinates (use user coords for circuit outline)
     map_x = user_chart["coord_x"]
     map_y = user_chart["coord_y"]
     if map_x is None:
@@ -783,7 +817,6 @@ def analyze(user_buf: bytes, ref_buf: bytes) -> dict:
 
     total_delta = float(time_delta[-1]) if len(time_delta) > 0 else 0.0
 
-    # Build response
     def to_list(arr):
         if arr is None:
             return [0.0] * len(chart_grid)
@@ -794,7 +827,7 @@ def analyze(user_buf: bytes, ref_buf: bytes) -> dict:
             return [0.0] * len(hd_grid)
         return [round(float(v), 3) for v in arr]
 
-    response = {
+    return {
         "meta": {
             "user_driver": user_driver or "Driver",
             "ref_driver": ref_driver or "Reference",
@@ -838,7 +871,12 @@ def analyze(user_buf: bytes, ref_buf: bytes) -> dict:
         "sectors": sectors,
     }
 
-    return response
+
+def analyze(user_buf: bytes, ref_buf: bytes) -> dict:
+    """Full analysis from two raw .ld buffers (used by dev server)."""
+    user_parsed = parse_single(user_buf, "User")
+    ref_parsed = parse_single(ref_buf, "Reference")
+    return analyze_from_parsed(user_parsed, ref_parsed)
 
 
 # ---------------------------------------------------------------------------
@@ -897,25 +935,45 @@ class handler(BaseHTTPRequestHandler):
         try:
             content_length = int(self.headers.get("Content-Length", 0))
             content_type = self.headers.get("Content-Type", "")
+            path = self.path.split("?")[0].rstrip("/")
 
             if content_length > 20 * 1024 * 1024:
-                self._error(413, "Files too large (max 10MB each)")
+                self._error(413, "File too large (max 10MB)")
                 return
 
             body = self.rfile.read(content_length)
-            files = parse_multipart(body, content_type)
 
-            user_file = files.get("user_file")
-            ref_file = files.get("ref_file")
+            if path.endswith("/parse"):
+                # Step 1: parse a single .ld file
+                files = parse_multipart(body, content_type)
+                ld_file = files.get("file")
+                if not ld_file:
+                    self._error(400, "Missing 'file' field")
+                    return
+                ld_file = _maybe_decompress(ld_file)
+                result = parse_single(ld_file)
 
-            if not user_file or not ref_file:
-                self._error(400, "Both user_file and ref_file are required")
-                return
+            elif path.endswith("/compare"):
+                # Step 2: compare two pre-parsed laps (JSON)
+                payload = json.loads(body)
+                user_parsed = payload.get("user_lap")
+                ref_parsed = payload.get("ref_lap")
+                if not user_parsed or not ref_parsed:
+                    self._error(400, "Both user_lap and ref_lap are required")
+                    return
+                result = analyze_from_parsed(user_parsed, ref_parsed)
 
-            user_file = _maybe_decompress(user_file)
-            ref_file = _maybe_decompress(ref_file)
-
-            result = analyze(user_file, ref_file)
+            else:
+                # Legacy: both files in one request
+                files = parse_multipart(body, content_type)
+                user_file = files.get("user_file")
+                ref_file = files.get("ref_file")
+                if not user_file or not ref_file:
+                    self._error(400, "Both user_file and ref_file are required")
+                    return
+                user_file = _maybe_decompress(user_file)
+                ref_file = _maybe_decompress(ref_file)
+                result = analyze(user_file, ref_file)
 
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
