@@ -1,4 +1,7 @@
 {
+  "rewrites": [
+    { "source": "/api/analyze", "destination": "/api/analyze/route" }
+  ],
   "functions": {
     "api/analyze/route.py": {
       "runtime": "@vercel/python@4.5.0",
