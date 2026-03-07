@@ -9,11 +9,10 @@ import json
 import sys
 import os
 import traceback
-import urllib.request
 
 # Add parent dir so we can import route
 sys.path.insert(0, os.path.dirname(__file__))
-from route import analyze, parse_multipart
+from route import analyze, parse_multipart, _maybe_decompress
 
 
 class DevHandler(BaseHTTPRequestHandler):
@@ -27,24 +26,17 @@ class DevHandler(BaseHTTPRequestHandler):
                 return
 
             body = self.rfile.read(content_length)
+            files = parse_multipart(body, content_type)
 
-            if "application/json" in content_type:
-                payload = json.loads(body)
-                user_url = payload.get("user_url")
-                ref_url = payload.get("ref_url")
-                if not user_url or not ref_url:
-                    self._error(400, "Both user_url and ref_url are required")
-                    return
-                user_file = urllib.request.urlopen(user_url).read()
-                ref_file = urllib.request.urlopen(ref_url).read()
-            else:
-                files = parse_multipart(body, content_type)
-                user_file = files.get("user_file")
-                ref_file = files.get("ref_file")
+            user_file = files.get("user_file")
+            ref_file = files.get("ref_file")
 
             if not user_file or not ref_file:
                 self._error(400, "Both user_file and ref_file are required")
                 return
+
+            user_file = _maybe_decompress(user_file)
+            ref_file = _maybe_decompress(ref_file)
 
             result = analyze(user_file, ref_file)
 

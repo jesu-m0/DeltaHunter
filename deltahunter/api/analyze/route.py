@@ -9,8 +9,7 @@ from http.server import BaseHTTPRequestHandler
 import json
 import struct
 import re
-import urllib.request
-import os
+import gzip
 import numpy as np
 
 
@@ -886,50 +885,37 @@ def parse_multipart(body: bytes, content_type: str):
 # Vercel serverless handler
 # ---------------------------------------------------------------------------
 
-def _delete_blobs(urls):
-    """Best-effort cleanup of Vercel Blob files."""
-    blob_token = os.environ.get("BLOB_READ_WRITE_TOKEN", "")
-    if not blob_token:
-        return
-    for url in urls:
-        try:
-            req = urllib.request.Request(
-                "https://blob.vercel-storage.com/delete",
-                data=json.dumps({"urls": [url]}).encode(),
-                headers={
-                    "Authorization": f"Bearer {blob_token}",
-                    "Content-Type": "application/json",
-                },
-                method="POST",
-            )
-            urllib.request.urlopen(req)
-        except Exception:
-            pass
+def _maybe_decompress(data: bytes) -> bytes:
+    """Decompress gzip data if detected, otherwise return as-is."""
+    if data[:2] == b'\x1f\x8b':
+        return gzip.decompress(data)
+    return data
 
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
-        blob_urls = []
         try:
             content_length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(content_length)
-            payload = json.loads(body)
+            content_type = self.headers.get("Content-Type", "")
 
-            user_url = payload.get("user_url")
-            ref_url = payload.get("ref_url")
-
-            if not user_url or not ref_url:
-                self._error(400, "Both user_url and ref_url are required")
+            if content_length > 20 * 1024 * 1024:
+                self._error(413, "Files too large (max 10MB each)")
                 return
 
-            blob_urls = [user_url, ref_url]
+            body = self.rfile.read(content_length)
+            files = parse_multipart(body, content_type)
 
-            user_buf = urllib.request.urlopen(user_url).read()
-            ref_buf = urllib.request.urlopen(ref_url).read()
+            user_file = files.get("user_file")
+            ref_file = files.get("ref_file")
 
-            result = analyze(user_buf, ref_buf)
+            if not user_file or not ref_file:
+                self._error(400, "Both user_file and ref_file are required")
+                return
 
-            _delete_blobs(blob_urls)
+            user_file = _maybe_decompress(user_file)
+            ref_file = _maybe_decompress(ref_file)
+
+            result = analyze(user_file, ref_file)
 
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -938,10 +924,8 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(result).encode())
 
         except ValueError as e:
-            _delete_blobs(blob_urls)
             self._error(400, str(e))
         except Exception as e:
-            _delete_blobs(blob_urls)
             self._error(500, f"Analysis failed: {str(e)}")
 
     def do_OPTIONS(self):

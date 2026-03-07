@@ -20,29 +20,23 @@ export default function Home() {
     setError(null);
 
     try {
-      const uploadFile = async (file: File): Promise<string> => {
-        const res = await fetch("/api/upload", {
-          method: "POST",
-          headers: { "x-filename": file.name },
-          body: file,
-        });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({ error: "Upload failed" }));
-          throw new Error(body.error || `Upload failed: ${res.status}`);
-        }
-        const { url } = await res.json();
-        return url;
+      const compress = async (file: File): Promise<Blob> => {
+        const stream = file.stream().pipeThrough(new CompressionStream("gzip"));
+        return new Response(stream).blob();
       };
 
-      const [userUrl, refUrl] = await Promise.all([
-        uploadFile(userFiles.ld),
-        uploadFile(refFiles.ld),
+      const [userGz, refGz] = await Promise.all([
+        compress(userFiles.ld),
+        compress(refFiles.ld),
       ]);
+
+      const form = new FormData();
+      form.append("user_file", userGz, userFiles.ld.name);
+      form.append("ref_file", refGz, refFiles.ld.name);
 
       const res = await fetch("/api/analyze", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_url: userUrl, ref_url: refUrl }),
+        body: form,
       });
 
       if (!res.ok) {
@@ -81,7 +75,7 @@ export default function Home() {
           <br />
           Drop .ld + .ldx together, or just the .ld file.
           <br />
-          Files are temporarily uploaded for processing and automatically deleted afterward.
+          Files are compressed and processed in-memory, never stored.
         </p>
       </div>
     </main>
