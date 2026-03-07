@@ -59,23 +59,11 @@ export default function SectorDetail({
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-4 px-5 py-3 border-b border-border/50">
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-x-4 gap-y-3 px-5 py-3 border-b border-border/50">
         <div>
           <div className="text-[10px] uppercase tracking-wider text-txt-dim mb-0.5">Delta</div>
           <div className={`font-mono text-sm font-semibold ${sector.delta > 0 ? "text-loss" : "text-gain"}`}>
             {sector.delta > 0 ? "+" : ""}{sector.delta.toFixed(3)}s
-          </div>
-        </div>
-        <div>
-          <div className="text-[10px] uppercase tracking-wider text-txt-dim mb-0.5">Your min speed</div>
-          <div className="font-mono text-sm font-semibold text-user">
-            {sector.user_min_speed.toFixed(0)} kph
-          </div>
-        </div>
-        <div>
-          <div className="text-[10px] uppercase tracking-wider text-txt-dim mb-0.5">Ref min speed</div>
-          <div className="font-mono text-sm font-semibold text-ref">
-            {sector.ref_min_speed.toFixed(0)} kph
           </div>
         </div>
         <div>
@@ -85,15 +73,35 @@ export default function SectorDetail({
           </div>
         </div>
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-txt-dim mb-0.5">Your trail brake</div>
-          <div className="font-mono text-sm font-semibold text-user">
-            {sector.user_trail_score?.toFixed(0) ?? 0}%
+          <div className="text-[10px] uppercase tracking-wider text-txt-dim mb-0.5">Min speed</div>
+          <div className="flex gap-2">
+            <span className="font-mono text-sm font-semibold text-user">{sector.user_min_speed.toFixed(0)}</span>
+            <span className="font-mono text-sm text-txt-dim">vs</span>
+            <span className="font-mono text-sm font-semibold text-ref">{sector.ref_min_speed.toFixed(0)}</span>
           </div>
         </div>
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-txt-dim mb-0.5">Ref trail brake</div>
-          <div className="font-mono text-sm font-semibold text-ref">
-            {sector.ref_trail_score?.toFixed(0) ?? 0}%
+          <div className="text-[10px] uppercase tracking-wider text-txt-dim mb-0.5">Brake point</div>
+          <div className="flex gap-2">
+            <span className="font-mono text-sm font-semibold text-user">{sector.user_brake_point != null ? `${sector.user_brake_point.toFixed(0)}m` : "—"}</span>
+            <span className="font-mono text-sm text-txt-dim">vs</span>
+            <span className="font-mono text-sm font-semibold text-ref">{sector.ref_brake_point != null ? `${sector.ref_brake_point.toFixed(0)}m` : "—"}</span>
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-txt-dim mb-0.5">Full throttle</div>
+          <div className="flex gap-2">
+            <span className="font-mono text-sm font-semibold text-user">{sector.user_throttle_on != null ? `${sector.user_throttle_on.toFixed(0)}m` : "—"}</span>
+            <span className="font-mono text-sm text-txt-dim">vs</span>
+            <span className="font-mono text-sm font-semibold text-ref">{sector.ref_throttle_on != null ? `${sector.ref_throttle_on.toFixed(0)}m` : "—"}</span>
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-txt-dim mb-0.5">Trail brake</div>
+          <div className="flex gap-2">
+            <span className="font-mono text-sm font-semibold text-user">{sector.user_trail_score?.toFixed(0) ?? 0}%</span>
+            <span className="font-mono text-sm text-txt-dim">vs</span>
+            <span className="font-mono text-sm font-semibold text-ref">{sector.ref_trail_score?.toFixed(0) ?? 0}%</span>
           </div>
         </div>
       </div>

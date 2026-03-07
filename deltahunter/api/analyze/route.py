@@ -164,12 +164,18 @@ def parse_channels(buf: bytes):
 
 
 def find_channel(channels: dict, *keywords):
-    """Find a channel by partial case-insensitive match on all keywords."""
+    """Find a channel by partial case-insensitive match on all keywords.
+    Prefers shorter (more exact) channel names to avoid e.g. 'Gearbox Damage' when looking for 'Gear'."""
+    matches = []
     for name, ch in channels.items():
         lower = name.lower()
         if all(k.lower() in lower for k in keywords):
-            return name, ch
-    return None, None
+            matches.append((name, ch))
+    if not matches:
+        return None, None
+    # Return shortest match (most specific)
+    matches.sort(key=lambda m: len(m[0]))
+    return matches[0]
 
 
 
@@ -300,6 +306,29 @@ def extract_all_laps(channels: dict):
     gear, gear_f = get_channel_data(channels, "gear")
     steer, steer_f = get_channel_data(channels, "steer")
 
+    rpm, rpm_f = get_channel_data(channels, "engine", "rpm")
+    if rpm is None:
+        rpm, rpm_f = get_channel_data(channels, "rpm")
+
+    fuel, fuel_f = get_channel_data(channels, "fuel", "level")
+    if fuel is None:
+        fuel, fuel_f = get_channel_data(channels, "fuel")
+
+    g_lat, g_lat_f = get_channel_data(channels, "accel", "lateral")
+    if g_lat is None:
+        g_lat, g_lat_f = get_channel_data(channels, "cg", "accel", "lat")
+    g_lon, g_lon_f = get_channel_data(channels, "accel", "longitudinal")
+    if g_lon is None:
+        g_lon, g_lon_f = get_channel_data(channels, "cg", "accel", "lon")
+
+    abs_data, abs_f = get_channel_data(channels, "abs", "active")
+    if abs_data is None:
+        abs_data, abs_f = get_channel_data(channels, "abs")
+
+    tc_data, tc_f = get_channel_data(channels, "tc", "active")
+    if tc_data is None:
+        tc_data, tc_f = get_channel_data(channels, "traction", "control")
+
     cx, cx_f = get_channel_data(channels, "car", "coord", "x")
     cy, cy_f = get_channel_data(channels, "car", "coord", "y")
     if cx is None or cy is None:
@@ -355,6 +384,13 @@ def extract_all_laps(channels: dict):
             lap_result["coord_x"] = None
             lap_result["coord_y"] = None
 
+        lap_result["rpm"] = extract(rpm, rpm_f) if rpm is not None else None
+        lap_result["fuel"] = extract(fuel, fuel_f) if fuel is not None else None
+        lap_result["g_lat"] = extract(g_lat, g_lat_f) if g_lat is not None else None
+        lap_result["g_lon"] = extract(g_lon, g_lon_f) if g_lon is not None else None
+        lap_result["abs"] = extract(abs_data, abs_f) if abs_data is not None else None
+        lap_result["tc"] = extract(tc_data, tc_f) if tc_data is not None else None
+
         if n_samples < best_samples:
             best_samples = n_samples
             best_index = len(results)
@@ -395,7 +431,18 @@ def interp_to_dist(lap: dict, grid: np.ndarray) -> dict:
         arr = lap.get(ch_name)
         if arr is None:
             return None
-        arr = arr[mask[: len(arr)]] if len(arr) >= len(mask) else arr
+        if len(arr) == len(mask):
+            arr = arr[mask]
+        else:
+            # Different length (different freq) — resample to match dist length
+            orig_len = len(arr)
+            target_len = len(d)
+            if orig_len > 1 and target_len > 1:
+                x_old = np.linspace(0, 1, orig_len)
+                x_new = np.linspace(0, 1, target_len)
+                arr = np.interp(x_new, x_old, arr)
+            elif target_len > 0:
+                arr = np.full(target_len, arr[0] if len(arr) > 0 else 0.0)
         if len(arr) < len(d):
             arr = np.pad(arr, (0, len(d) - len(arr)), mode="edge")
         elif len(arr) > len(d):
@@ -403,7 +450,7 @@ def interp_to_dist(lap: dict, grid: np.ndarray) -> dict:
         return np.interp(grid, d, arr)
 
     result = {}
-    for key in ["speed", "throttle", "brake", "gear", "steering"]:
+    for key in ["speed", "throttle", "brake", "gear", "steering", "rpm", "fuel", "g_lat", "g_lon", "abs", "tc"]:
         result[key] = interp_ch(key)
     for key in ["coord_x", "coord_y"]:
         result[key] = interp_ch(key)
@@ -638,6 +685,12 @@ def parse_single(buf: bytes, label: str = "File") -> dict:
             "steering": arr_to_list(lap["steering"]),
             "coord_x": arr_to_list(lap.get("coord_x")),
             "coord_y": arr_to_list(lap.get("coord_y")),
+            "rpm": arr_to_list(lap.get("rpm")),
+            "fuel": arr_to_list(lap.get("fuel")),
+            "g_lat": arr_to_list(lap.get("g_lat")),
+            "g_lon": arr_to_list(lap.get("g_lon")),
+            "abs": arr_to_list(lap.get("abs")),
+            "tc": arr_to_list(lap.get("tc")),
         })
 
     return {
@@ -667,6 +720,12 @@ def _lap_from_parsed(parsed: dict) -> dict:
         "steering": to_arr(parsed["steering"]),
         "coord_x": to_arr(parsed.get("coord_x")),
         "coord_y": to_arr(parsed.get("coord_y")),
+        "rpm": to_arr(parsed.get("rpm")),
+        "fuel": to_arr(parsed.get("fuel")),
+        "g_lat": to_arr(parsed.get("g_lat")),
+        "g_lon": to_arr(parsed.get("g_lon")),
+        "abs": to_arr(parsed.get("abs")),
+        "tc": to_arr(parsed.get("tc")),
     }
 
 
@@ -794,6 +853,27 @@ def _compare_laps(
         r_trail = r_braking & (np.abs(r_str_s) > 5)
         r_trail_score = float(np.sum(r_trail) / max(np.sum(r_braking), 1) * 100)
 
+        # Braking point: first distance in sector where brake > 5%
+        sector_dist = chart_grid[idx]
+        def brake_point(brk):
+            hits = np.where(brk > 5)[0]
+            return float(sector_dist[hits[0]]) if len(hits) > 0 else None
+
+        # Throttle-on point: first distance after min-speed where throttle > 95%
+        def throttle_on_point(thr, spd):
+            min_idx = int(np.argmin(spd))
+            after = thr[min_idx:]
+            hits = np.where(after > 95)[0]
+            return float(sector_dist[min_idx + hits[0]]) if len(hits) > 0 else None
+
+        u_thr_s = user_chart["throttle"][idx] if user_chart["throttle"] is not None else np.zeros(len(idx))
+        r_thr_s = ref_chart["throttle"][idx] if ref_chart["throttle"] is not None else np.zeros(len(idx))
+
+        u_brake_point = brake_point(u_brk_s)
+        r_brake_point = brake_point(r_brk_s)
+        u_throttle_on = throttle_on_point(u_thr_s, user_chart["speed"][idx])
+        r_throttle_on = throttle_on_point(r_thr_s, ref_chart["speed"][idx])
+
         tip = generate_tip(sector_names[i], u_min, r_min, u_trail_score, r_trail_score)
         sectors.append({
             "id": i,
@@ -805,6 +885,10 @@ def _compare_laps(
             "ref_min_speed": round(r_min, 1),
             "user_trail_score": round(u_trail_score, 1),
             "ref_trail_score": round(r_trail_score, 1),
+            "user_brake_point": round(u_brake_point, 1) if u_brake_point is not None else None,
+            "ref_brake_point": round(r_brake_point, 1) if r_brake_point is not None else None,
+            "user_throttle_on": round(u_throttle_on, 1) if u_throttle_on is not None else None,
+            "ref_throttle_on": round(r_throttle_on, 1) if r_throttle_on is not None else None,
             "tip": tip,
         })
 
@@ -849,6 +933,18 @@ def _compare_laps(
             "ref_gear": to_list(ref_chart["gear"]),
             "user_steering": to_list(user_chart["steering"]),
             "ref_steering": to_list(ref_chart["steering"]),
+            "user_rpm": to_list(user_chart.get("rpm")),
+            "ref_rpm": to_list(ref_chart.get("rpm")),
+            "user_fuel": to_list(user_chart.get("fuel")),
+            "ref_fuel": to_list(ref_chart.get("fuel")),
+            "user_g_lat": to_list(user_chart.get("g_lat")),
+            "ref_g_lat": to_list(ref_chart.get("g_lat")),
+            "user_g_lon": to_list(user_chart.get("g_lon")),
+            "ref_g_lon": to_list(ref_chart.get("g_lon")),
+            "user_abs": to_list(user_chart.get("abs")),
+            "ref_abs": to_list(ref_chart.get("abs")),
+            "user_tc": to_list(user_chart.get("tc")),
+            "ref_tc": to_list(ref_chart.get("tc")),
             "delta_speed": to_list(user_chart["speed"] - ref_chart["speed"]
                                     if user_chart["speed"] is not None
                                     else None),
@@ -870,6 +966,16 @@ def _compare_laps(
             "ref_throttle": to_list_hd(ref_hd["throttle"]),
             "user_steering": to_list_hd(user_hd["steering"]),
             "ref_steering": to_list_hd(ref_hd["steering"]),
+            "user_rpm": to_list_hd(user_hd.get("rpm")),
+            "ref_rpm": to_list_hd(ref_hd.get("rpm")),
+            "user_g_lat": to_list_hd(user_hd.get("g_lat")),
+            "ref_g_lat": to_list_hd(ref_hd.get("g_lat")),
+            "user_g_lon": to_list_hd(user_hd.get("g_lon")),
+            "ref_g_lon": to_list_hd(ref_hd.get("g_lon")),
+            "user_abs": to_list_hd(user_hd.get("abs")),
+            "ref_abs": to_list_hd(ref_hd.get("abs")),
+            "user_tc": to_list_hd(user_hd.get("tc")),
+            "ref_tc": to_list_hd(ref_hd.get("tc")),
         },
         "sectors": sectors,
     }

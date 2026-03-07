@@ -10,6 +10,12 @@ export interface ParsedLap {
   steering: number[];
   coord_x: number[] | null;
   coord_y: number[] | null;
+  rpm: number[] | null;
+  fuel: number[] | null;
+  g_lat: number[] | null;
+  g_lon: number[] | null;
+  abs: number[] | null;
+  tc: number[] | null;
 }
 
 export interface ParsedSession {
@@ -30,6 +36,10 @@ export interface SectorData {
   ref_min_speed: number;
   user_trail_score: number;
   ref_trail_score: number;
+  user_brake_point: number | null;
+  ref_brake_point: number | null;
+  user_throttle_on: number | null;
+  ref_throttle_on: number | null;
   tip: string;
 }
 
@@ -45,6 +55,18 @@ export interface ChartData {
   ref_gear: number[];
   user_steering: number[];
   ref_steering: number[];
+  user_rpm: number[];
+  ref_rpm: number[];
+  user_fuel: number[];
+  ref_fuel: number[];
+  user_g_lat: number[];
+  ref_g_lat: number[];
+  user_g_lon: number[];
+  ref_g_lon: number[];
+  user_abs: number[];
+  ref_abs: number[];
+  user_tc: number[];
+  ref_tc: number[];
   delta_speed: number[];
   time_delta: number[];
   map_x: number[];
@@ -65,6 +87,16 @@ export interface HdData {
   ref_throttle: number[];
   user_steering: number[];
   ref_steering: number[];
+  user_rpm: number[];
+  ref_rpm: number[];
+  user_g_lat: number[];
+  ref_g_lat: number[];
+  user_g_lon: number[];
+  ref_g_lon: number[];
+  user_abs: number[];
+  ref_abs: number[];
+  user_tc: number[];
+  ref_tc: number[];
 }
 
 export interface MetaData {

@@ -8,9 +8,35 @@ interface LapFiles {
 }
 
 interface Props {
-  onAnalyze: (userFiles: LapFiles, refFiles: LapFiles) => void;
+  onAnalyze: (userFiles: LapFiles, refFiles: LapFiles | null) => void;
   loading: boolean;
   error: string | null;
+}
+
+const DEMOS = [
+  {
+    label: "Imola — jesu_m0 vs Cavalli",
+    user: "/imola/jesu_m0/21022026-130019-jesum0-fw_cupra_tcr_2024-fn_imolalfm.ld",
+    ref: "/imola/cavalli/fn_imola_&_fw_cupra_tcr_2024_&_E. Cavalli_&_stint_3.ld",
+  },
+  {
+    label: "Sepang — jesu_m0 vs Cavalli",
+    user: "/sepang/jesum0/22022026-233806-15  Jesus Moreno-fw_cupra_tcr_2024-acu_sepang.ld",
+    ref: "/sepang/cavalli/acu_sepang_&_fw_cupra_tcr_2024_&_E. Cavalli_&_stint_22.ld",
+  },
+  {
+    label: "Imola — jesu_m0 (solo session)",
+    user: "/imola/jesu_m0/21022026-130019-jesum0-fw_cupra_tcr_2024-fn_imolalfm.ld",
+    ref: null,
+  },
+];
+
+async function fetchAsFile(url: string): Promise<File> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch ${url}`);
+  const blob = await res.blob();
+  const name = url.split("/").pop() ?? "telemetry.ld";
+  return new File([blob], name, { type: "application/octet-stream" });
 }
 
 function DropBox({
@@ -38,7 +64,6 @@ function DropBox({
         else if (name.endsWith(".ldx")) newLdx = f;
       }
 
-      // Merge with existing: new files override, missing ones keep previous
       onFiles(newLd ?? ld, newLdx ?? ldx);
     },
     [onFiles, ld, ldx]
@@ -148,8 +173,25 @@ export default function UploadZone({ onAnalyze, loading, error }: Props) {
   const [userLdx, setUserLdx] = useState<File | null>(null);
   const [refLd, setRefLd] = useState<File | null>(null);
   const [refLdx, setRefLdx] = useState<File | null>(null);
+  const [loadingDemo, setLoadingDemo] = useState<string | null>(null);
 
-  const canAnalyze = userLd && refLd && !loading;
+  const canAnalyze = userLd && !loading;
+
+  const handleDemo = async (demo: (typeof DEMOS)[number]) => {
+    setLoadingDemo(demo.label);
+    try {
+      const userFile = await fetchAsFile(demo.user);
+      const refFile = demo.ref ? await fetchAsFile(demo.ref) : null;
+      onAnalyze(
+        { ld: userFile, ldx: null },
+        refFile ? { ld: refFile, ldx: null } : null
+      );
+    } catch {
+      // let parent handle error
+    } finally {
+      setLoadingDemo(null);
+    }
+  };
 
   return (
     <div className="w-full max-w-2xl mx-auto">
@@ -157,7 +199,7 @@ export default function UploadZone({ onAnalyze, loading, error }: Props) {
         <div>
           <label className="block text-sm font-medium text-txt-dim mb-2">
             <span className="inline-block w-2 h-2 rounded-full bg-user mr-2" />
-            Your lap
+            Your telemetry
           </label>
           <DropBox
             label="Your telemetry files"
@@ -172,7 +214,7 @@ export default function UploadZone({ onAnalyze, loading, error }: Props) {
         <div>
           <label className="block text-sm font-medium text-txt-dim mb-2">
             <span className="inline-block w-2 h-2 rounded-full bg-ref mr-2" />
-            Reference lap
+            Reference <span className="text-txt-dim/50">(optional)</span>
           </label>
           <DropBox
             label="Reference telemetry files"
@@ -186,6 +228,12 @@ export default function UploadZone({ onAnalyze, loading, error }: Props) {
         </div>
       </div>
 
+      {!refLd && userLd && (
+        <p className="text-xs text-txt-dim/60 text-center mb-4">
+          No reference file? Your best and 2nd best laps will be compared automatically.
+        </p>
+      )}
+
       {error && (
         <div className="mb-4 p-3 rounded-lg bg-loss/10 border border-loss/30 text-loss text-sm">
           {error}
@@ -195,10 +243,10 @@ export default function UploadZone({ onAnalyze, loading, error }: Props) {
       <button
         disabled={!canAnalyze}
         onClick={() => {
-          if (userLd && refLd)
+          if (userLd)
             onAnalyze(
               { ld: userLd, ldx: userLdx },
-              { ld: refLd, ldx: refLdx }
+              refLd ? { ld: refLd, ldx: refLdx } : null
             );
         }}
         className={`
@@ -238,6 +286,26 @@ export default function UploadZone({ onAnalyze, loading, error }: Props) {
           "Analyze"
         )}
       </button>
+
+      {/* Demo presets */}
+      <div className="mt-8 pt-6 border-t border-border/50">
+        <p className="text-xs text-txt-dim uppercase tracking-wider font-semibold mb-3 text-center">
+          Or try a demo
+        </p>
+        <div className="flex flex-wrap justify-center gap-2">
+          {DEMOS.map((demo) => (
+            <button
+              key={demo.label}
+              disabled={loading || loadingDemo !== null}
+              onClick={() => handleDemo(demo)}
+              className="px-3 py-1.5 rounded-lg bg-surface2 border border-border text-xs text-txt-dim
+                hover:text-txt hover:border-user/40 transition-colors disabled:opacity-50"
+            >
+              {loadingDemo === demo.label ? "Loading..." : demo.label}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

@@ -12,6 +12,9 @@ import DeltaChart from "@/components/DeltaChart";
 import ThrottleChart from "@/components/ThrottleChart";
 import BrakeChart from "@/components/BrakeChart";
 import TrailBrakeChart from "@/components/TrailBrakeChart";
+import GearChart from "@/components/GearChart";
+import RpmGearChart from "@/components/RpmGearChart";
+import TelemetryCard from "@/components/TelemetryCard";
 import DriverToggle from "@/components/DriverToggle";
 import LapSelector from "@/components/LapSelector";
 import Findings from "@/components/Findings";
@@ -199,6 +202,18 @@ export default function AnalysisPage() {
           />
         </div>
 
+        {/* Live telemetry card */}
+        {markerDist !== null && (
+          <TelemetryCard
+            chart={chart}
+            markerDist={markerDist}
+            showUser={showUser}
+            showRef={showRef}
+            userLabel={meta.user_driver}
+            refLabel={meta.ref_driver}
+          />
+        )}
+
         {/* Charts */}
         <div className="space-y-4">
           <div className="bg-surface rounded-xl border border-border p-4">
@@ -224,6 +239,39 @@ export default function AnalysisPage() {
               chart={chart}
               sectors={sectors}
               activeSector={activeSector}
+              markerDist={markerDist}
+              onMarkerPlace={setMarkerDist}
+            />
+          </div>
+
+          <div className="bg-surface rounded-xl border border-border p-4">
+            <h2 className="text-xs font-semibold text-txt-dim uppercase tracking-wider mb-2">
+              Gear
+            </h2>
+            <GearChart
+              chart={chart}
+              sectors={sectors}
+              activeSector={activeSector}
+              showUser={showUser}
+              showRef={showRef}
+              markerDist={markerDist}
+              onMarkerPlace={setMarkerDist}
+            />
+          </div>
+
+          <div className="bg-surface rounded-xl border border-border p-4">
+            <h2 className="text-xs font-semibold text-txt-dim uppercase tracking-wider mb-1">
+              RPM &amp; Gear
+            </h2>
+            <p className="text-[11px] text-txt-dim/70 mb-2">
+              RPM trace with gear overlay. Dots mark upshift points — compare shift RPM to find optimal shift timing.
+            </p>
+            <RpmGearChart
+              chart={chart}
+              sectors={sectors}
+              activeSector={activeSector}
+              showUser={showUser}
+              showRef={showRef}
               markerDist={markerDist}
               onMarkerPlace={setMarkerDist}
             />
