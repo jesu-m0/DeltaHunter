@@ -52,3 +52,6 @@ venv/
 *.swo
 *~
 deltahunter/public/TODO.txt
+
+.vercel
+.env*.local
