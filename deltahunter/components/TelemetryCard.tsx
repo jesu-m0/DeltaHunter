@@ -45,9 +45,9 @@ function Gauge({ label, value, max, color }: { label: string; value: number; max
     <div className="flex items-center gap-2">
       <span className="text-[10px] text-txt-dim w-8 text-right">{label}</span>
       <div className="flex-1 h-2 rounded-full bg-surface2 overflow-hidden">
-        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+        <div className="h-full rounded-full transition-all duration-150 ease-out" style={{ width: `${pct}%`, backgroundColor: color }} />
       </div>
-      <span className="text-[10px] font-mono text-txt w-10 text-right">{value.toFixed(0)}{label === "Fuel" ? "L" : "%"}</span>
+      <span className="text-[10px] font-mono text-txt w-10 text-right tabular-nums">{value.toFixed(0)}{label === "Fuel" ? "L" : "%"}</span>
     </div>
   );
 }
@@ -62,7 +62,7 @@ function DriverCard({ state, label, color }: { state: DriverState; label: string
       <div className="flex items-center gap-2 mb-2">
         <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
         <span className="text-xs font-semibold text-txt">{label}</span>
-        <span className="ml-auto font-mono text-sm font-bold text-txt">{state.speed.toFixed(0)} kph</span>
+        <span className="ml-auto font-mono text-sm font-bold text-txt tabular-nums">{state.speed.toFixed(0)} kph</span>
       </div>
 
       <div className="grid grid-cols-2 gap-x-4 gap-y-1">
@@ -76,12 +76,12 @@ function DriverCard({ state, label, color }: { state: DriverState; label: string
         <div className="space-y-1">
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-txt-dim">Gear</span>
-            <span className="font-mono text-sm font-bold text-txt">G{Math.round(state.gear)}</span>
+            <span className="font-mono text-sm font-bold text-txt tabular-nums">G{Math.round(state.gear)}</span>
           </div>
           {hasRpm && (
             <div className="flex items-center justify-between">
               <span className="text-[10px] text-txt-dim">RPM</span>
-              <span className="font-mono text-xs text-txt">{Math.round(state.rpm)}</span>
+              <span className="font-mono text-xs text-txt tabular-nums">{Math.round(state.rpm)}</span>
             </div>
           )}
         </div>
@@ -94,7 +94,7 @@ function DriverCard({ state, label, color }: { state: DriverState; label: string
           <div className="flex-1 h-2 rounded-full bg-surface2 overflow-hidden relative">
             <div className="absolute top-0 bottom-0 w-px bg-txt-dim/30" style={{ left: "50%" }} />
             <div
-              className="absolute top-0 h-full rounded-full"
+              className="absolute top-0 h-full rounded-full transition-all duration-150 ease-out"
               style={{
                 backgroundColor: color,
                 opacity: 0.7,
@@ -103,7 +103,7 @@ function DriverCard({ state, label, color }: { state: DriverState; label: string
               }}
             />
           </div>
-          <span className="text-[10px] font-mono text-txt w-10 text-right">{state.steering.toFixed(0)}&deg;</span>
+          <span className="text-[10px] font-mono text-txt w-10 text-right tabular-nums">{state.steering.toFixed(0)}&deg;</span>
         </div>
       </div>
 
@@ -112,18 +112,18 @@ function DriverCard({ state, label, color }: { state: DriverState; label: string
         {hasFuel && (
           <div className="flex items-center gap-1">
             <span className="text-[10px] text-txt-dim">Fuel</span>
-            <span className="font-mono text-[10px] text-txt">{state.fuel.toFixed(1)}L</span>
+            <span className="font-mono text-[10px] text-txt tabular-nums">{state.fuel.toFixed(1)}L</span>
           </div>
         )}
         {hasG && (
           <>
             <div className="flex items-center gap-1">
               <span className="text-[10px] text-txt-dim">G-Lat</span>
-              <span className="font-mono text-[10px] text-txt">{state.gLat.toFixed(2)}g</span>
+              <span className="font-mono text-[10px] text-txt tabular-nums">{state.gLat.toFixed(2)}g</span>
             </div>
             <div className="flex items-center gap-1">
               <span className="text-[10px] text-txt-dim">G-Lon</span>
-              <span className="font-mono text-[10px] text-txt">{state.gLon.toFixed(2)}g</span>
+              <span className="font-mono text-[10px] text-txt tabular-nums">{state.gLon.toFixed(2)}g</span>
             </div>
           </>
         )}
@@ -159,7 +159,7 @@ function GForceDot({ gLat, gLon, color }: { gLat: number; gLon: number; color: s
         <circle cx={cx} cy={cy} r={size / 2 - 2} fill="none" stroke="rgba(106,114,136,0.3)" strokeWidth={1} />
         <line x1={cx} y1={2} x2={cx} y2={size - 2} stroke="rgba(106,114,136,0.15)" strokeWidth={1} />
         <line x1={2} y1={cy} x2={size - 2} y2={cy} stroke="rgba(106,114,136,0.15)" strokeWidth={1} />
-        <circle cx={px} cy={py} r={4} fill={color} />
+        <circle cx={px} cy={py} r={4} fill={color} style={{ transition: "cx 150ms ease-out, cy 150ms ease-out" }} />
       </svg>
     </div>
   );
@@ -209,7 +209,7 @@ export default function TelemetryCard({
         <h3 className="text-xs font-semibold text-txt-dim uppercase tracking-wider">
           Telemetry at {data.dist.toFixed(0)}m
         </h3>
-        <span className={`font-mono text-xs font-semibold ${data.delta > 0 ? "text-loss" : "text-gain"}`}>
+        <span className={`font-mono text-xs font-semibold tabular-nums transition-colors duration-150 ${data.delta > 0 ? "text-loss" : "text-gain"}`}>
           {data.delta > 0 ? "+" : ""}{data.delta.toFixed(3)}s
         </span>
       </div>

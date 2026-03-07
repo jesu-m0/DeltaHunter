@@ -15,6 +15,7 @@ import TrailBrakeChart from "@/components/TrailBrakeChart";
 import GearChart from "@/components/GearChart";
 import RpmGearChart from "@/components/RpmGearChart";
 import TelemetryCard from "@/components/TelemetryCard";
+import PlaybackBar from "@/components/PlaybackBar";
 import DriverToggle from "@/components/DriverToggle";
 import LapSelector from "@/components/LapSelector";
 import Findings from "@/components/Findings";
@@ -201,6 +202,13 @@ export default function AnalysisPage() {
             onToggleRef={() => setShowRef(!showRef)}
           />
         </div>
+
+        {/* Playback controls */}
+        <PlaybackBar
+          chart={chart}
+          markerDist={markerDist}
+          onMarkerPlace={setMarkerDist}
+        />
 
         {/* Live telemetry card */}
         {markerDist !== null && (
