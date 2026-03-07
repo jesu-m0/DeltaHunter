@@ -2,7 +2,7 @@
 
 Telemetry comparison tool for sim racing. Upload two MoTeC `.ld` telemetry files and get a detailed lap-by-lap breakdown of where you're gaining or losing time against a reference driver.
 
-Built for **Assetto Corsa Competizione** — it's the sim I race on and the only one I've tested with. The `.ld` format is standard MoTeC, so it *might* work with other sims that export MoTeC telemetry, but no guarantees.
+Built for **Assetto Corsa** — it's the sim I race on and the only one I've tested with. The `.ld` format is standard MoTeC, so it *might* work with other sims that export MoTeC telemetry, but no guarantees.
 
 ## How it works
 
@@ -14,10 +14,10 @@ You can also switch between laps from each session using the lap selector — no
 
 ## Getting your telemetry
 
-In **Assetto Corsa Competizione**, MoTeC telemetry logging is enabled by default. Your `.ld` files are saved to:
+In **Assetto Corsa**, MoTeC telemetry logging is enabled by default. Your `.ld` files are saved to:
 
 ```
-Documents\Assetto Corsa Competizione\MoTeC\
+Documents\Assetto Corsa\MoTeC\
 ```
 
 Each session generates an `.ld` file (the telemetry data) and an `.ldx` file (metadata). You only need the `.ld` file.
@@ -57,9 +57,9 @@ Circuits with full sector definitions (named corners, accurate sector boundaries
 
 Any circuit **will still work** — DeltaHunter auto-detects braking zones and creates generic sectors (Corner 1, Corner 2, etc.) based on speed, brake, and throttle data. The analysis is fully functional, but sector names won't match real corner names and the boundaries may not be as precise as hand-tuned circuits.
 
-## Why only Assetto Corsa Competizione?
+## Why only Assetto Corsa?
 
-It's what I race. I built DeltaHunter to compare my laps against faster drivers in my league and understand where I was losing time. ACC uses the MoTeC `.ld` binary format for telemetry logging, which is what DeltaHunter parses.
+It's what I race. I built DeltaHunter to compare my laps against faster drivers and understand where I was losing time. AC uses the MoTeC `.ld` binary format for telemetry logging, which is what DeltaHunter parses.
 
 Other sims that export MoTeC `.ld` files (iRacing with third-party tools, rFactor 2, etc.) might work but are untested. If you try it and it works (or doesn't), let me know.
 
