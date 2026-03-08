@@ -8,3 +8,10 @@
 
 - las secciones auto detectadas no pueden tener gap entre ellas. Los definidos diría que tambien.
 
+- punto marcado tambien se muestra en el circuito completo
+
+- en el mapa de la seccion el pto aparece como una flecha.
+
+- como estos analisis principalmente se hace desde pc, aprovechar todo el ancho para mostrar más graficas
+
+- let the user give feedback somehow
