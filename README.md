@@ -67,16 +67,15 @@ Other sims that export MoTeC `.ld` files (iRacing with third-party tools, rFacto
 
 ```
 DeltaHunter/
-  deltahunter/              # Next.js project root
-    api/analyze/             # Python backend (Vercel serverless)
-      route.py               # MoTeC parser + telemetry comparison engine
-      dev_server.py          # Local Flask dev server
-    app/                     # Next.js pages
-      page.tsx               # Upload page
-      analysis/page.tsx      # Analysis dashboard
-    components/              # React components (charts, maps, controls)
-    lib/                     # Zustand store, types, chart utilities
-    public/                  # Sample telemetry files
+  api/analyze/             # Python backend (Vercel serverless)
+    route.py               # MoTeC parser + telemetry comparison engine
+    dev_server.py          # Local Flask dev server
+  app/                     # Next.js pages
+    page.tsx               # Upload page
+    analysis/page.tsx      # Analysis dashboard
+  components/              # React components (charts, maps, controls)
+  lib/                     # Zustand store, types, chart utilities
+  public/                  # Sample telemetry files
 ```
 
 ## Tech stack

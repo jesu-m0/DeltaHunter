@@ -1,0 +1,10 @@
+- manage temp and show/unshow cavalli stats en un centro de control flotante abajo del todo a lo spotify. 
+
+- el tamaño de las graficas.
+
+- la detección de circuitos no soportado, mejorable cuanto menos. 
+
+- user puede decidir que seccion se muestran las stats, custom. desde x a y. 
+
+- las secciones auto detectadas no pueden tener gap entre ellas. Los definidos diría que tambien.
+
