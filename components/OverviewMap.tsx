@@ -1,7 +1,8 @@
 "use client";
 
 import { useRef, useEffect, useCallback } from "react";
-import { setupCanvas, clearCanvas, COLORS, hexToRgba } from "@/lib/chartUtils";
+import { setupCanvas, clearCanvas, COLORS, hexToRgba, arrayMin, arrayMax } from "@/lib/chartUtils";
+import { useChartHeight } from "@/lib/useChartHeight";
 import type { ChartData, SectorData } from "@/lib/types";
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
   sectors: SectorData[];
   activeSector: number | null;
   onSectorSelect: (id: number | null) => void;
+  markerDist: number | null;
 }
 
 export default function OverviewMap({
@@ -16,9 +18,11 @@ export default function OverviewMap({
   sectors,
   activeSector,
   onSectorSelect,
+  markerDist,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const HEIGHT = useChartHeight(360);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -26,7 +30,7 @@ export default function OverviewMap({
     if (!canvas || !container) return;
 
     const w = container.clientWidth;
-    const h = 360;
+    const h = HEIGHT;
     const ctx = setupCanvas(canvas, w, h);
     clearCanvas(ctx, w, h);
 
@@ -34,10 +38,10 @@ export default function OverviewMap({
     if (map_x.length < 2) return;
 
     const pad = 40;
-    const minX = Math.min(...map_x);
-    const maxX = Math.max(...map_x);
-    const minY = Math.min(...map_y);
-    const maxY = Math.max(...map_y);
+    const minX = arrayMin(map_x);
+    const maxX = arrayMax(map_x);
+    const minY = arrayMin(map_y);
+    const maxY = arrayMax(map_y);
     const rangeX = maxX - minX || 1;
     const rangeY = maxY - minY || 1;
     const scale = Math.min((w - pad * 2) / rangeX, (h - pad * 2) / rangeY);
@@ -72,7 +76,7 @@ export default function OverviewMap({
     ctx.stroke();
 
     // Draw sectors colored by delta intensity
-    const maxDelta = Math.max(...sectors.map((s) => Math.abs(s.delta)), 0.01);
+    const maxDelta = arrayMax(sectors.map((s) => Math.abs(s.delta)), 0.01);
     for (const s of sectors) {
       const isActive = activeSector === s.id;
       const intensity = Math.min(1, Math.abs(s.delta) / maxDelta);
@@ -141,7 +145,29 @@ export default function OverviewMap({
       ctx.fillStyle = dimmed ? hexToRgba(COLORS.txtDim, 0.3) : COLORS.txt;
       ctx.fillText(s.name, lx, ly - 22);
     }
-  }, [chart, sectors, activeSector]);
+
+    // Playback / hover marker on the full circuit
+    if (markerDist !== null) {
+      let mIdx = 0;
+      let best = Infinity;
+      for (let i = 0; i < dist.length; i++) {
+        const dd = Math.abs(dist[i] - markerDist);
+        if (dd < best) {
+          best = dd;
+          mIdx = i;
+        }
+      }
+      const [mx, my] = toScreen(map_x[mIdx], map_y[mIdx]);
+      ctx.beginPath();
+      ctx.arc(mx, my, 6, 0, Math.PI * 2);
+      ctx.fillStyle = COLORS.txt;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(mx, my, 4, 0, Math.PI * 2);
+      ctx.fillStyle = COLORS.user;
+      ctx.fill();
+    }
+  }, [chart, sectors, activeSector, markerDist, HEIGHT]);
 
   useEffect(() => {
     draw();
@@ -161,14 +187,14 @@ export default function OverviewMap({
 
     const { map_x, map_y, dist } = chart;
     const pad = 40;
-    const minX = Math.min(...map_x);
-    const maxX = Math.max(...map_x);
-    const minY = Math.min(...map_y);
-    const maxY = Math.max(...map_y);
+    const minX = arrayMin(map_x);
+    const maxX = arrayMax(map_x);
+    const minY = arrayMin(map_y);
+    const maxY = arrayMax(map_y);
     const rangeX = maxX - minX || 1;
     const rangeY = maxY - minY || 1;
     const w = canvas.clientWidth;
-    const h = 360;
+    const h = HEIGHT;
     const scale = Math.min((w - pad * 2) / rangeX, (h - pad * 2) / rangeY);
     const offX = (w - rangeX * scale) / 2;
     const offY = (h - rangeY * scale) / 2;
@@ -198,7 +224,7 @@ export default function OverviewMap({
       <canvas
         ref={canvasRef}
         className="w-full cursor-pointer"
-        style={{ height: 360 }}
+        style={{ height: HEIGHT }}
         onClick={handleClick}
       />
     </div>

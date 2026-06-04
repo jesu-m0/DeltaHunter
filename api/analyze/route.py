@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler
 import json
 import struct
 import re
+import io
 import gzip
 import numpy as np
 
@@ -335,16 +336,17 @@ def extract_all_laps(channels: dict):
         cx, cx_f = get_channel_data(channels, "pos", "x")
         cy, cy_f = get_channel_data(channels, "pos", "y")
 
+    lt_data, lt_freq = get_channel_data(channels, "lap", "time")
+
     # --- Extract each complete lap ---
     results = []
     best_index = 0
-    best_samples = float("inf")
+    best_lap_time = float("inf")
 
     for lap_idx, (ln, info) in enumerate(sorted(complete_laps.items())):
         n_samples = info["end"] - info["start"]
         if n_samples <= 0:
             continue
-        lap_time = n_samples / base_freq
 
         def extract(data, freq):
             s = int(info["start"] * freq / base_freq)
@@ -352,6 +354,17 @@ def extract_all_laps(channels: dict):
             s = max(0, min(s, len(data) - 1))
             e = max(s + 1, min(e, len(data)))
             return data[s:e]
+
+        # Lap time: prefer the dedicated lap-time channel, fall back to sample count.
+        # A sanity window guards against unrelated channels matching "lap"/"time".
+        samples_time = n_samples / base_freq
+        lap_time = samples_time
+        if lt_data is not None and lt_freq > 0:
+            lt_slice = extract(lt_data, lt_freq)
+            if len(lt_slice) > 0:
+                channel_time = float(np.max(lt_slice))
+                if 0 < channel_time < 36000 and 0.5 * samples_time <= channel_time <= 2.0 * samples_time:
+                    lap_time = channel_time
 
         lap_result = {"lap_time": lap_time, "lap_number": ln}
 
@@ -391,8 +404,8 @@ def extract_all_laps(channels: dict):
         lap_result["abs"] = extract(abs_data, abs_f) if abs_data is not None else None
         lap_result["tc"] = extract(tc_data, tc_f) if tc_data is not None else None
 
-        if n_samples < best_samples:
-            best_samples = n_samples
+        if lap_time < best_lap_time:
+            best_lap_time = lap_time
             best_index = len(results)
 
         results.append(lap_result)
@@ -533,13 +546,6 @@ def detect_sectors(speed: np.ndarray, brake: np.ndarray, throttle: np.ndarray, d
     n = len(speed)
     step = float(dist[1] - dist[0]) if n > 1 else 2.0
 
-    # Smooth speed
-    kernel = 10
-    if n > kernel:
-        smooth = np.convolve(speed, np.ones(kernel) / kernel, mode="same")
-    else:
-        smooth = speed
-
     # Find braking zones: brake > 15% for > 30m
     min_samples = max(1, int(30 / step))
     in_brake = brake > 15
@@ -604,7 +610,7 @@ def calc_time_delta(user_speed: np.ndarray, ref_speed: np.ndarray, dist: np.ndar
 # Tips generation
 # ---------------------------------------------------------------------------
 
-def generate_tip(sector_name: str, user_min_speed: float, ref_min_speed: float,
+def generate_tip(user_min_speed: float, ref_min_speed: float,
                   user_trail: float = 0.0, ref_trail: float = 0.0) -> str:
     delta_speed = ref_min_speed - user_min_speed
     trail_diff = ref_trail - user_trail
@@ -815,6 +821,14 @@ def _compare_laps(
 
     time_delta = calc_time_delta(user_chart["speed"], ref_chart["speed"], chart_grid)
 
+    # Reconcile the speed-integrated delta with the real lap-time difference so the
+    # delta trace endpoint matches the lap times shown in the UI. The residual is
+    # distributed linearly along the lap, preserving the shape of the curve.
+    lap_time_delta = float(user_lap["lap_time"]) - float(ref_lap["lap_time"])
+    if len(time_delta) > 1 and chart_grid[-1] > 0:
+        residual = lap_time_delta - float(time_delta[-1])
+        time_delta = time_delta + residual * (chart_grid / chart_grid[-1])
+
     track_name = user_track or ref_track
     circuit = match_circuit(track_name)
 
@@ -874,7 +888,7 @@ def _compare_laps(
         u_throttle_on = throttle_on_point(u_thr_s, user_chart["speed"][idx])
         r_throttle_on = throttle_on_point(r_thr_s, ref_chart["speed"][idx])
 
-        tip = generate_tip(sector_names[i], u_min, r_min, u_trail_score, r_trail_score)
+        tip = generate_tip(u_min, r_min, u_trail_score, r_trail_score)
         sectors.append({
             "id": i,
             "name": sector_names[i],
@@ -1012,12 +1026,12 @@ def parse_multipart(body: bytes, content_type: str):
             continue
         header = part[:header_end].decode("latin-1", errors="replace")
         file_data = part[header_end + 4 :]
-        # Remove trailing \r\n
+        # Strip only the CRLF that precedes the next boundary delimiter.
+        # Do NOT strip a trailing "--"/"--\r\n": the closing delimiter lives in
+        # its own split segment (which has no Content-Disposition and is skipped),
+        # and stripping those bytes corrupts binary payloads — e.g. gzip data that
+        # happens to end in 0x2d 0x2d ("--").
         if file_data.endswith(b"\r\n"):
-            file_data = file_data[:-2]
-        if file_data.endswith(b"--\r\n"):
-            file_data = file_data[:-4]
-        if file_data.endswith(b"--"):
             file_data = file_data[:-2]
 
         # Extract field name
@@ -1032,10 +1046,18 @@ def parse_multipart(body: bytes, content_type: str):
 # Vercel serverless handler
 # ---------------------------------------------------------------------------
 
-def _maybe_decompress(data: bytes) -> bytes:
-    """Decompress gzip data if detected, otherwise return as-is."""
-    if data[:2] == b'\x1f\x8b':
-        return gzip.decompress(data)
+def _maybe_decompress(data: bytes, max_size: int = 200 * 1024 * 1024) -> bytes:
+    """Decompress gzip data if detected, otherwise return as-is.
+
+    Uses the gzip module (handles multi-member streams) and caps the
+    decompressed output to guard against decompression bombs.
+    """
+    if data[:2] == b"\x1f\x8b":
+        with gzip.GzipFile(fileobj=io.BytesIO(data)) as f:
+            result = f.read(max_size + 1)
+        if len(result) > max_size:
+            raise ValueError("Decompressed file too large")
+        return result
     return data
 
 
@@ -1047,7 +1069,7 @@ class handler(BaseHTTPRequestHandler):
             path = self.path.split("?")[0].rstrip("/")
 
             if content_length > 20 * 1024 * 1024:
-                self._error(413, "File too large (max 10MB)")
+                self._error(413, "File too large (max 20MB)")
                 return
 
             body = self.rfile.read(content_length)

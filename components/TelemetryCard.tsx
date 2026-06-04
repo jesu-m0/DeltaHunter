@@ -47,7 +47,7 @@ function Gauge({ label, value, max, color }: { label: string; value: number; max
       <div className="flex-1 h-2 rounded-full bg-surface2 overflow-hidden">
         <div className="h-full rounded-full transition-all duration-150 ease-out" style={{ width: `${pct}%`, backgroundColor: color }} />
       </div>
-      <span className="text-[10px] font-mono text-txt w-10 text-right tabular-nums">{value.toFixed(0)}{label === "Fuel" ? "L" : "%"}</span>
+      <span className="text-[10px] font-mono text-txt w-10 text-right tabular-nums">{value.toFixed(0)}%</span>
     </div>
   );
 }

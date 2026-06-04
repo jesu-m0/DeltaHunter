@@ -12,9 +12,12 @@ import {
   drawTooltip,
   findHoverIndex,
   getSliceIndices,
+  arrayMin,
+  arrayMax,
   COLORS,
   DEFAULT_PADDING,
 } from "@/lib/chartUtils";
+import { useChartHeight } from "@/lib/useChartHeight";
 import type { ChartData, SectorData } from "@/lib/types";
 
 interface Props {
@@ -25,12 +28,13 @@ interface Props {
   onMarkerPlace: (dist: number | null) => void;
 }
 
-const HEIGHT = 160;
+const BASE_HEIGHT = 160;
 
 export default function DeltaChart({ chart, sectors, activeSector, markerDist, onMarkerPlace }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
+  const HEIGHT = useChartHeight(BASE_HEIGHT);
 
   const getRange = useCallback(() => {
     if (activeSector !== null) {
@@ -59,7 +63,7 @@ export default function DeltaChart({ chart, sectors, activeSector, markerDist, o
     const dist = chart.dist.slice(i0, i1);
     const delta = chart.time_delta.slice(i0, i1);
 
-    const absMax = Math.max(Math.abs(Math.min(...delta)), Math.abs(Math.max(...delta)), 0.1);
+    const absMax = Math.max(Math.abs(arrayMin(delta, 0)), Math.abs(arrayMax(delta, 0)), 0.1);
     const yBound = Math.ceil(absMax * 10) / 10 + 0.1;
 
     drawGrid(ctx, w, h, pad, xMin, xMax, -yBound, yBound, "Distance (m)", "Delta (s)", 6, 4);
@@ -109,7 +113,7 @@ export default function DeltaChart({ chart, sectors, activeSector, markerDist, o
         );
       }
     }
-  }, [chart, sectors, activeSector, hover, markerDist, getRange]);
+  }, [chart, sectors, activeSector, hover, markerDist, getRange, HEIGHT]);
 
   useEffect(() => {
     draw();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { ChartData } from "@/lib/types";
 
 interface Props {
@@ -121,20 +121,32 @@ export default function PlaybackBar({ chart, markerDist, onMarkerPlace }: Props)
 
   const progress = markerDist !== null ? ((markerDist - minDist) / (maxDist - minDist)) * 100 : 0;
 
-  // Compute elapsed time at marker position
-  const getTimeAtDist = (targetDist: number): number => {
-    let t = 0;
+  // Precompute cumulative elapsed-time at each sample once per chart, so the
+  // playback readout is O(log n) per frame instead of O(n) every render.
+  const cumTime = useMemo(() => {
+    const t = new Array<number>(chart.dist.length);
+    t[0] = 0;
     for (let i = 1; i < chart.dist.length; i++) {
-      if (chart.dist[i] > targetDist) break;
       const dd = chart.dist[i] - chart.dist[i - 1];
       const speed = Math.max(chart.user_speed[i], 10) / 3.6;
-      t += dd / speed;
+      t[i] = t[i - 1] + dd / speed;
     }
     return t;
+  }, [chart]);
+
+  const timeIndexAt = (targetDist: number): number => {
+    let lo = 0;
+    let hi = chart.dist.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (chart.dist[mid] < targetDist) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
   };
 
-  const currentTime = markerDist !== null ? getTimeAtDist(markerDist) : 0;
-  const totalTime = getTimeAtDist(maxDist);
+  const totalTime = cumTime[cumTime.length - 1] ?? 0;
+  const currentTime = markerDist !== null ? cumTime[timeIndexAt(markerDist)] ?? 0 : 0;
 
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
@@ -143,8 +155,8 @@ export default function PlaybackBar({ chart, markerDist, onMarkerPlace }: Props)
   };
 
   return (
-    <div className="bg-surface rounded-xl border border-border px-4 py-3">
-      <div className="flex items-center gap-3">
+    <div className="w-full min-w-0">
+      <div className="flex items-center gap-2 sm:gap-3">
         {/* Play/Pause */}
         <button
           onClick={playing ? handlePause : handlePlay}
@@ -177,7 +189,7 @@ export default function PlaybackBar({ chart, markerDist, onMarkerPlace }: Props)
         {/* Skip back */}
         <button
           onClick={() => handleSkip(-100)}
-          className="w-8 h-8 flex items-center justify-center rounded-lg bg-surface2 text-txt-dim
+          className="w-8 h-8 hidden sm:flex items-center justify-center rounded-lg bg-surface2 text-txt-dim
             hover:text-txt transition-colors"
           title="-100m"
         >
@@ -189,7 +201,7 @@ export default function PlaybackBar({ chart, markerDist, onMarkerPlace }: Props)
         {/* Skip forward */}
         <button
           onClick={() => handleSkip(100)}
-          className="w-8 h-8 flex items-center justify-center rounded-lg bg-surface2 text-txt-dim
+          className="w-8 h-8 hidden sm:flex items-center justify-center rounded-lg bg-surface2 text-txt-dim
             hover:text-txt transition-colors"
           title="+100m"
         >
@@ -227,15 +239,34 @@ export default function PlaybackBar({ chart, markerDist, onMarkerPlace }: Props)
           {(markerDist ?? 0).toFixed(0)}m
         </span>
 
-        {/* Speed selector */}
-        <button
-          onClick={() => setSpeedIdx((i) => (i + 1) % SPEEDS.length)}
-          className="px-2 py-1 rounded-lg bg-surface2 text-xs font-mono text-txt-dim
-            hover:text-txt transition-colors min-w-[3rem] text-center"
-          title="Playback speed"
-        >
-          {playbackSpeed}x
-        </button>
+        {/* Speed: step slower/faster, each arrow disabled at its limit */}
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => setSpeedIdx((i) => Math.max(0, i - 1))}
+            disabled={speedIdx === 0}
+            title="Slower"
+            className="w-7 h-8 flex items-center justify-center rounded-lg bg-surface2 text-txt-dim
+              hover:text-txt transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-txt-dim"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <span className="w-10 text-center font-mono text-xs text-txt tabular-nums">
+            {playbackSpeed}x
+          </span>
+          <button
+            onClick={() => setSpeedIdx((i) => Math.min(SPEEDS.length - 1, i + 1))}
+            disabled={speedIdx === SPEEDS.length - 1}
+            title="Faster"
+            className="w-7 h-8 flex items-center justify-center rounded-lg bg-surface2 text-txt-dim
+              hover:text-txt transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-txt-dim"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
   );

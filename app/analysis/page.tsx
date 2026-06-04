@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAnalysisStore } from "@/lib/store";
+import ChartCard from "@/components/ChartCard";
 import OverviewMap from "@/components/OverviewMap";
 import SectorTable from "@/components/SectorTable";
 import SectorButtons from "@/components/SectorButtons";
@@ -15,8 +16,7 @@ import TrailBrakeChart from "@/components/TrailBrakeChart";
 import GearChart from "@/components/GearChart";
 import RpmGearChart from "@/components/RpmGearChart";
 import TelemetryCard from "@/components/TelemetryCard";
-import PlaybackBar from "@/components/PlaybackBar";
-import DriverToggle from "@/components/DriverToggle";
+import ControlDock from "@/components/ControlDock";
 import LapSelector from "@/components/LapSelector";
 import Findings from "@/components/Findings";
 
@@ -59,7 +59,7 @@ export default function AnalysisPage() {
     <main className="min-h-screen bg-bg">
       {/* Header */}
       <header className="border-b border-border">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="max-w-[1600px] mx-auto px-4 py-4 flex items-center justify-between">
           <button
             onClick={() => router.push("/")}
             className="text-xl font-bold tracking-tight hover:opacity-80 transition-opacity"
@@ -108,7 +108,7 @@ export default function AnalysisPage() {
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+      <div className="max-w-[1600px] mx-auto px-4 py-6 space-y-6 pb-44 sm:pb-24">
         {/* Top section: Map + Sectors */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-surface rounded-xl border border-border p-4">
@@ -120,6 +120,7 @@ export default function AnalysisPage() {
               sectors={sectors}
               activeSector={activeSector}
               onSectorSelect={setActiveSector}
+              markerDist={markerDist}
             />
           </div>
           <div className="bg-surface rounded-xl border border-border p-4">
@@ -186,28 +187,11 @@ export default function AnalysisPage() {
           </div>
         ) : null}
 
-        {/* Controls */}
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <SectorButtons
-            sectors={sectors}
-            activeSector={activeSector}
-            onSectorSelect={setActiveSector}
-          />
-          <DriverToggle
-            showUser={showUser}
-            showRef={showRef}
-            userLabel={meta.user_driver}
-            refLabel={meta.ref_driver}
-            onToggleUser={() => setShowUser(!showUser)}
-            onToggleRef={() => setShowRef(!showRef)}
-          />
-        </div>
-
-        {/* Playback controls */}
-        <PlaybackBar
-          chart={chart}
-          markerDist={markerDist}
-          onMarkerPlace={setMarkerDist}
+        {/* Sector selector */}
+        <SectorButtons
+          sectors={sectors}
+          activeSector={activeSector}
+          onSectorSelect={setActiveSector}
         />
 
         {/* Live telemetry card */}
@@ -224,10 +208,7 @@ export default function AnalysisPage() {
 
         {/* Charts */}
         <div className="space-y-4">
-          <div className="bg-surface rounded-xl border border-border p-4">
-            <h2 className="text-xs font-semibold text-txt-dim uppercase tracking-wider mb-2">
-              Speed
-            </h2>
+          <ChartCard title="Speed" defaultHeight={220} storageKey="speed">
             <SpeedChart
               chart={chart}
               sectors={sectors}
@@ -237,12 +218,9 @@ export default function AnalysisPage() {
               markerDist={markerDist}
               onMarkerPlace={setMarkerDist}
             />
-          </div>
+          </ChartCard>
 
-          <div className="bg-surface rounded-xl border border-border p-4">
-            <h2 className="text-xs font-semibold text-txt-dim uppercase tracking-wider mb-2">
-              Time delta
-            </h2>
+          <ChartCard title="Time delta" defaultHeight={160} storageKey="delta">
             <DeltaChart
               chart={chart}
               sectors={sectors}
@@ -250,46 +228,41 @@ export default function AnalysisPage() {
               markerDist={markerDist}
               onMarkerPlace={setMarkerDist}
             />
+          </ChartCard>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
+            <ChartCard title="Gear" defaultHeight={160} storageKey="gear">
+              <GearChart
+                chart={chart}
+                sectors={sectors}
+                activeSector={activeSector}
+                showUser={showUser}
+                showRef={showRef}
+                markerDist={markerDist}
+                onMarkerPlace={setMarkerDist}
+              />
+            </ChartCard>
+
+            <ChartCard
+              title="RPM & Gear"
+              description="RPM trace with gear overlay. Dots mark upshift points — compare shift RPM to find optimal shift timing."
+              defaultHeight={180}
+              storageKey="rpmgear"
+            >
+              <RpmGearChart
+                chart={chart}
+                sectors={sectors}
+                activeSector={activeSector}
+                showUser={showUser}
+                showRef={showRef}
+                markerDist={markerDist}
+                onMarkerPlace={setMarkerDist}
+              />
+            </ChartCard>
           </div>
 
-          <div className="bg-surface rounded-xl border border-border p-4">
-            <h2 className="text-xs font-semibold text-txt-dim uppercase tracking-wider mb-2">
-              Gear
-            </h2>
-            <GearChart
-              chart={chart}
-              sectors={sectors}
-              activeSector={activeSector}
-              showUser={showUser}
-              showRef={showRef}
-              markerDist={markerDist}
-              onMarkerPlace={setMarkerDist}
-            />
-          </div>
-
-          <div className="bg-surface rounded-xl border border-border p-4">
-            <h2 className="text-xs font-semibold text-txt-dim uppercase tracking-wider mb-1">
-              RPM &amp; Gear
-            </h2>
-            <p className="text-[11px] text-txt-dim/70 mb-2">
-              RPM trace with gear overlay. Dots mark upshift points — compare shift RPM to find optimal shift timing.
-            </p>
-            <RpmGearChart
-              chart={chart}
-              sectors={sectors}
-              activeSector={activeSector}
-              showUser={showUser}
-              showRef={showRef}
-              markerDist={markerDist}
-              onMarkerPlace={setMarkerDist}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-surface rounded-xl border border-border p-4">
-              <h2 className="text-xs font-semibold text-txt-dim uppercase tracking-wider mb-2">
-                Throttle
-              </h2>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+            <ChartCard title="Throttle" defaultHeight={160} storageKey="throttle">
               <ThrottleChart
                 chart={chart}
                 sectors={sectors}
@@ -299,11 +272,8 @@ export default function AnalysisPage() {
                 markerDist={markerDist}
                 onMarkerPlace={setMarkerDist}
               />
-            </div>
-            <div className="bg-surface rounded-xl border border-border p-4">
-              <h2 className="text-xs font-semibold text-txt-dim uppercase tracking-wider mb-2">
-                Brake
-              </h2>
+            </ChartCard>
+            <ChartCard title="Brake" defaultHeight={160} storageKey="brake">
               <BrakeChart
                 chart={chart}
                 sectors={sectors}
@@ -313,17 +283,15 @@ export default function AnalysisPage() {
                 markerDist={markerDist}
                 onMarkerPlace={setMarkerDist}
               />
-            </div>
+            </ChartCard>
           </div>
 
-          <div className="bg-surface rounded-xl border border-border p-4">
-            <h2 className="text-xs font-semibold text-txt-dim uppercase tracking-wider mb-1">
-              Trail braking
-            </h2>
-            <p className="text-[11px] text-txt-dim/70 mb-2">
-              Solid line = brake %, dashed line = steering angle. Shaded zones = trail braking (braking while turning).
-              More trail braking usually means better corner entry speed.
-            </p>
+          <ChartCard
+            title="Trail braking"
+            description="Solid line = brake %, dashed line = steering angle. Shaded zones = trail braking (braking while turning). More trail braking usually means better corner entry speed."
+            defaultHeight={240}
+            storageKey="trailbrake"
+          >
             <TrailBrakeChart
               chart={chart}
               sectors={sectors}
@@ -333,7 +301,7 @@ export default function AnalysisPage() {
               markerDist={markerDist}
               onMarkerPlace={setMarkerDist}
             />
-          </div>
+          </ChartCard>
         </div>
 
         {/* Findings */}
@@ -346,6 +314,14 @@ export default function AnalysisPage() {
           DeltaHunter — Telemetry comparison for sim racing
         </div>
       </div>
+
+      <ControlDock
+        chart={chart}
+        markerDist={markerDist}
+        onMarkerPlace={setMarkerDist}
+        userLabel={meta.user_driver}
+        refLabel={meta.ref_driver}
+      />
     </main>
   );
 }

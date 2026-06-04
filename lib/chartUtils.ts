@@ -248,6 +248,19 @@ export function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
+// Spread-free min/max — Math.min(...arr) can overflow the call stack on large arrays.
+export function arrayMax(arr: ArrayLike<number>, seed: number = -Infinity): number {
+  let m = seed;
+  for (let i = 0; i < arr.length; i++) if (arr[i] > m) m = arr[i];
+  return m;
+}
+
+export function arrayMin(arr: ArrayLike<number>, seed: number = Infinity): number {
+  let m = seed;
+  for (let i = 0; i < arr.length; i++) if (arr[i] < m) m = arr[i];
+  return m;
+}
+
 function formatNum(v: number): string {
   if (Math.abs(v) >= 1000) return Math.round(v).toString();
   if (Math.abs(v) >= 10) return v.toFixed(0);

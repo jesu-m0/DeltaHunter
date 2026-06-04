@@ -13,6 +13,7 @@ import {
   COLORS,
   DEFAULT_PADDING,
 } from "@/lib/chartUtils";
+import { useChartHeight } from "@/lib/useChartHeight";
 import type { ChartData, SectorData } from "@/lib/types";
 
 interface Props {
@@ -25,7 +26,7 @@ interface Props {
   onMarkerPlace: (dist: number | null) => void;
 }
 
-const HEIGHT = 180;
+const BASE_HEIGHT = 180;
 
 export default function RpmGearChart({
   chart,
@@ -39,6 +40,7 @@ export default function RpmGearChart({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
+  const HEIGHT = useChartHeight(BASE_HEIGHT);
 
   const getRange = useCallback(() => {
     if (activeSector !== null) {
@@ -191,7 +193,7 @@ export default function RpmGearChart({
         drawTooltip(ctx, hover.x, hover.y, lines, w, h);
       }
     }
-  }, [chart, sectors, activeSector, showUser, showRef, hover, markerDist, getRange]);
+  }, [chart, sectors, activeSector, showUser, showRef, hover, markerDist, getRange, HEIGHT]);
 
   useEffect(() => {
     draw();

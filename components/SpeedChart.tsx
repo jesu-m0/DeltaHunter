@@ -12,9 +12,11 @@ import {
   drawTooltip,
   findHoverIndex,
   getSliceIndices,
+  arrayMax,
   COLORS,
   DEFAULT_PADDING,
 } from "@/lib/chartUtils";
+import { useChartHeight } from "@/lib/useChartHeight";
 import type { ChartData, SectorData } from "@/lib/types";
 
 interface Props {
@@ -27,7 +29,7 @@ interface Props {
   onMarkerPlace: (dist: number | null) => void;
 }
 
-const HEIGHT = 220;
+const BASE_HEIGHT = 220;
 
 export default function SpeedChart({
   chart,
@@ -41,6 +43,7 @@ export default function SpeedChart({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
+  const HEIGHT = useChartHeight(BASE_HEIGHT);
 
   const getRange = useCallback(() => {
     if (activeSector !== null) {
@@ -70,11 +73,12 @@ export default function SpeedChart({
     const userSpd = chart.user_speed.slice(i0, i1);
     const refSpd = chart.ref_speed.slice(i0, i1);
 
-    const allSpd = [
-      ...(showUser ? userSpd : []),
-      ...(showRef ? refSpd : []),
-    ];
-    const yMax = Math.ceil((Math.max(...allSpd, 100) + 10) / 10) * 10;
+    const peakSpd = Math.max(
+      showUser ? arrayMax(userSpd) : 0,
+      showRef ? arrayMax(refSpd) : 0,
+      100
+    );
+    const yMax = Math.ceil((peakSpd + 10) / 10) * 10;
 
     drawGrid(ctx, w, h, pad, xMin, xMax, 0, yMax, "Distance (m)", "Speed (kph)");
     drawSectorBands(ctx, sectors, activeSector, w, h, pad, xMin, xMax);
@@ -111,7 +115,7 @@ export default function SpeedChart({
         drawTooltip(ctx, hover.x, hover.y, lines, w, h);
       }
     }
-  }, [chart, sectors, activeSector, showUser, showRef, hover, markerDist, getRange]);
+  }, [chart, sectors, activeSector, showUser, showRef, hover, markerDist, getRange, HEIGHT]);
 
   useEffect(() => {
     draw();

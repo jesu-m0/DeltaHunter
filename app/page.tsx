@@ -69,7 +69,12 @@ export default function Home() {
         }
       }
 
-      setParsed(userSession, refSession);
+      setParsed(
+        userSession,
+        refSession,
+        userLapIdx >= 0 ? userLapIdx : undefined,
+        refLapIdx >= 0 ? refLapIdx : undefined
+      );
 
       // Compare
       const compareBody: Record<string, unknown> = {

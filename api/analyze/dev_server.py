@@ -26,7 +26,7 @@ class DevHandler(BaseHTTPRequestHandler):
             path = self.path.split("?")[0].rstrip("/")
 
             if content_length > 20 * 1024 * 1024:
-                self._error(413, "File too large (max 10MB)")
+                self._error(413, "File too large (max 20MB)")
                 return
 
             body = self.rfile.read(content_length)

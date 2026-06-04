@@ -1,7 +1,8 @@
 "use client";
 
 import { useRef, useEffect, useCallback, useState } from "react";
-import { setupCanvas, clearCanvas, speedToColor, COLORS, hexToRgba } from "@/lib/chartUtils";
+import { setupCanvas, clearCanvas, speedToColor, COLORS, hexToRgba, arrayMin, arrayMax } from "@/lib/chartUtils";
+import { useChartHeight } from "@/lib/useChartHeight";
 import type { HdData, SectorData } from "@/lib/types";
 
 interface Props {
@@ -13,12 +14,13 @@ interface Props {
   onMarkerPlace: (dist: number | null) => void;
 }
 
-const HEIGHT = 480;
+const BASE_HEIGHT = 480;
 
 export default function RacingLineMap({ hd, sector, showUser, showRef, markerDist, onMarkerPlace }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
+  const HEIGHT = useChartHeight(BASE_HEIGHT);
 
   // Zoom & pan state
   const [zoom, setZoom] = useState(1);
@@ -78,10 +80,10 @@ export default function RacingLineMap({ hd, sector, showUser, showRef, markerDis
     const allY = [...(showUser ? uy : []), ...(showRef ? ry : [])];
     if (allX.length === 0) return;
 
-    const minX = Math.min(...allX);
-    const maxX = Math.max(...allX);
-    const minY = Math.min(...allY);
-    const maxY = Math.max(...allY);
+    const minX = arrayMin(allX);
+    const maxX = arrayMax(allX);
+    const minY = arrayMin(allY);
+    const maxY = arrayMax(allY);
     const rangeX = maxX - minX || 1;
     const rangeY = maxY - minY || 1;
 
@@ -108,8 +110,8 @@ export default function RacingLineMap({ hd, sector, showUser, showRef, markerDis
       ...(showUser ? uSpd : []),
       ...(showRef ? rSpd : []),
     ];
-    const spdMin = Math.min(...allSpeeds);
-    const spdMax = Math.max(...allSpeeds);
+    const spdMin = arrayMin(allSpeeds);
+    const spdMax = arrayMax(allSpeeds);
 
     // Draw track surface (wide gray line using user coords as baseline)
     ctx.beginPath();
@@ -406,7 +408,7 @@ export default function RacingLineMap({ hd, sector, showUser, showRef, markerDis
       ctx.textBaseline = "top";
       ctx.fillText(`${zoom.toFixed(1)}x`, 8, 8);
     }
-  }, [hd, sector, showUser, showRef, hover, zoom, pan, markerDist]);
+  }, [hd, sector, showUser, showRef, hover, zoom, pan, markerDist, HEIGHT]);
 
   useEffect(() => {
     draw();

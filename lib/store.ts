@@ -13,7 +13,7 @@ interface AnalysisStore {
   showRef: boolean;
   markerDist: number | null;
   setData: (data: AnalysisResponse) => void;
-  setParsed: (user: ParsedSession, ref: ParsedSession) => void;
+  setParsed: (user: ParsedSession, ref: ParsedSession, userLapIndex?: number, refLapIndex?: number) => void;
   setUserLapIndex: (i: number) => void;
   setRefLapIndex: (i: number) => void;
   recompare: () => Promise<void>;
@@ -36,12 +36,12 @@ export const useAnalysisStore = create<AnalysisStore>((set, get) => ({
   showRef: true,
   markerDist: null,
   setData: (data) => set({ data, activeSector: null, markerDist: null }),
-  setParsed: (user, ref) =>
+  setParsed: (user, ref, userLapIndex, refLapIndex) =>
     set({
       parsedUser: user,
       parsedRef: ref,
-      userLapIndex: user.best_index,
-      refLapIndex: ref.best_index,
+      userLapIndex: userLapIndex ?? user.best_index,
+      refLapIndex: refLapIndex ?? ref.best_index,
     }),
   setUserLapIndex: (i) => set({ userLapIndex: i }),
   setRefLapIndex: (i) => set({ refLapIndex: i }),
