@@ -1,6 +1,24 @@
 import { create } from "zustand";
 import type { AnalysisResponse, ParsedSession } from "./types";
 
+/**
+ * Build the /compare payload for one driver: only the selected lap plus
+ * session meta, instead of the whole parsed session. Long sessions produce
+ * multi-MB JSON, which is slow and can exceed the API's request size limit.
+ */
+export function lapPayload(session: ParsedSession, lapIndex: number) {
+  const idx =
+    lapIndex >= 0 && lapIndex < session.laps.length
+      ? lapIndex
+      : session.best_index;
+  return {
+    ...session.laps[idx],
+    driver: session.driver,
+    car: session.car,
+    track: session.track,
+  };
+}
+
 interface AnalysisStore {
   data: AnalysisResponse | null;
   parsedUser: ParsedSession | null;
@@ -8,6 +26,7 @@ interface AnalysisStore {
   userLapIndex: number;
   refLapIndex: number;
   comparing: boolean;
+  error: string | null;
   activeSector: number | null;
   showUser: boolean;
   showRef: boolean;
@@ -31,11 +50,13 @@ export const useAnalysisStore = create<AnalysisStore>((set, get) => ({
   userLapIndex: -1,
   refLapIndex: -1,
   comparing: false,
+  error: null,
   activeSector: null,
   showUser: true,
   showRef: true,
   markerDist: null,
-  setData: (data) => set({ data, activeSector: null, markerDist: null }),
+  setData: (data) =>
+    set({ data, activeSector: null, markerDist: null, error: null }),
   setParsed: (user, ref, userLapIndex, refLapIndex) =>
     set({
       parsedUser: user,
@@ -48,23 +69,27 @@ export const useAnalysisStore = create<AnalysisStore>((set, get) => ({
   recompare: async () => {
     const { parsedUser, parsedRef, userLapIndex, refLapIndex } = get();
     if (!parsedUser || !parsedRef) return;
-    set({ comparing: true });
+    set({ comparing: true, error: null });
     try {
       const res = await fetch("/api/analyze/compare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          user_lap: parsedUser,
-          ref_lap: parsedRef,
-          user_lap_index: userLapIndex,
-          ref_lap_index: refLapIndex,
+          user_lap: lapPayload(parsedUser, userLapIndex),
+          ref_lap: lapPayload(parsedRef, refLapIndex),
         }),
       });
-      if (!res.ok) throw new Error("Compare failed");
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error || `Compare failed (${res.status})`);
+      }
       const data: AnalysisResponse = await res.json();
       set({ data, activeSector: null, markerDist: null, comparing: false });
-    } catch {
-      set({ comparing: false });
+    } catch (e) {
+      set({
+        comparing: false,
+        error: e instanceof Error ? e.message : "Compare failed",
+      });
     }
   },
   setActiveSector: (id) => set({ activeSector: id, markerDist: null }),
@@ -79,6 +104,7 @@ export const useAnalysisStore = create<AnalysisStore>((set, get) => ({
       userLapIndex: -1,
       refLapIndex: -1,
       comparing: false,
+      error: null,
       activeSector: null,
       showUser: true,
       showRef: true,

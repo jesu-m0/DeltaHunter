@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import UploadZone from "@/components/UploadZone";
-import { useAnalysisStore } from "@/lib/store";
+import { lapPayload, useAnalysisStore } from "@/lib/store";
 import type { AnalysisResponse, ParsedSession } from "@/lib/types";
 
 export default function Home() {
@@ -53,20 +53,24 @@ export default function Home() {
         refSession = await parseSession(refFiles.ld);
       } else {
         // Single file: compare best vs 2nd best lap from same session
-        refSession = userSession;
-        if (userSession.laps.length >= 2) {
-          userLapIdx = userSession.best_index;
-          // Find 2nd best (fastest after best)
-          let secondBest = -1;
-          let secondTime = Infinity;
-          for (let i = 0; i < userSession.laps.length; i++) {
-            if (i !== userSession.best_index && userSession.laps[i].lap_time < secondTime) {
-              secondTime = userSession.laps[i].lap_time;
-              secondBest = i;
-            }
-          }
-          refLapIdx = secondBest >= 0 ? secondBest : 0;
+        if (userSession.laps.length < 2) {
+          throw new Error(
+            "This session only contains one complete lap, so there is nothing to compare it against. " +
+              "Upload a reference telemetry file, or a session with more laps."
+          );
         }
+        refSession = userSession;
+        userLapIdx = userSession.best_index;
+        // Find 2nd best (fastest after best)
+        let secondBest = -1;
+        let secondTime = Infinity;
+        for (let i = 0; i < userSession.laps.length; i++) {
+          if (i !== userSession.best_index && userSession.laps[i].lap_time < secondTime) {
+            secondTime = userSession.laps[i].lap_time;
+            secondBest = i;
+          }
+        }
+        refLapIdx = secondBest >= 0 ? secondBest : 0;
       }
 
       setParsed(
@@ -76,18 +80,14 @@ export default function Home() {
         refLapIdx >= 0 ? refLapIdx : undefined
       );
 
-      // Compare
-      const compareBody: Record<string, unknown> = {
-        user_lap: userSession,
-        ref_lap: refSession,
-      };
-      if (userLapIdx >= 0) compareBody.user_lap_index = userLapIdx;
-      if (refLapIdx >= 0) compareBody.ref_lap_index = refLapIdx;
-
+      // Compare — send only the selected laps, not the whole sessions
       const res = await fetch("/api/analyze/compare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(compareBody),
+        body: JSON.stringify({
+          user_lap: lapPayload(userSession, userLapIdx),
+          ref_lap: lapPayload(refSession, refLapIdx),
+        }),
       });
 
       if (!res.ok) {

@@ -174,11 +174,14 @@ export default function UploadZone({ onAnalyze, loading, error }: Props) {
   const [refLd, setRefLd] = useState<File | null>(null);
   const [refLdx, setRefLdx] = useState<File | null>(null);
   const [loadingDemo, setLoadingDemo] = useState<string | null>(null);
+  const [demoError, setDemoError] = useState<string | null>(null);
 
   const canAnalyze = userLd && !loading;
+  const shownError = error ?? demoError;
 
   const handleDemo = async (demo: (typeof DEMOS)[number]) => {
     setLoadingDemo(demo.label);
+    setDemoError(null);
     try {
       const userFile = await fetchAsFile(demo.user);
       const refFile = demo.ref ? await fetchAsFile(demo.ref) : null;
@@ -186,8 +189,10 @@ export default function UploadZone({ onAnalyze, loading, error }: Props) {
         { ld: userFile, ldx: null },
         refFile ? { ld: refFile, ldx: null } : null
       );
-    } catch {
-      // let parent handle error
+    } catch (e) {
+      setDemoError(
+        e instanceof Error ? e.message : "Failed to load the demo files"
+      );
     } finally {
       setLoadingDemo(null);
     }
@@ -234,9 +239,9 @@ export default function UploadZone({ onAnalyze, loading, error }: Props) {
         </p>
       )}
 
-      {error && (
+      {shownError && (
         <div className="mb-4 p-3 rounded-lg bg-loss/10 border border-loss/30 text-loss text-sm">
-          {error}
+          {shownError}
         </div>
       )}
 

@@ -25,6 +25,8 @@ export default function RacingLineMap({ hd, sector, showUser, showRef, markerDis
   // Zoom & pan state
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  // State (not just the ref) so the grab/grabbing cursor class re-renders
+  const [dragging, setDragging] = useState(false);
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
   // Store computed data for click handler
   const drawDataRef = useRef<{
@@ -440,6 +442,7 @@ export default function RacingLineMap({ hd, sector, showUser, showRef, markerDis
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
     dragRef.current = { startX: e.clientX, startY: e.clientY, panX: pan.x, panY: pan.y };
+    setDragging(true);
   }, [pan]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
@@ -481,6 +484,7 @@ export default function RacingLineMap({ hd, sector, showUser, showRef, markerDis
       }
     }
     dragRef.current = null;
+    setDragging(false);
   }, [showUser, showRef, markerDist, onMarkerPlace]);
 
   const isZoomed = zoom > 1.05 || Math.abs(pan.x) > 1 || Math.abs(pan.y) > 1;
@@ -492,7 +496,7 @@ export default function RacingLineMap({ hd, sector, showUser, showRef, markerDis
     <div ref={containerRef} className="w-full relative">
       <canvas
         ref={canvasRef}
-        className={`w-full ${dragRef.current ? "cursor-grabbing" : "cursor-grab"}`}
+        className={`w-full ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
         style={{ height: HEIGHT }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -500,6 +504,7 @@ export default function RacingLineMap({ hd, sector, showUser, showRef, markerDis
         onMouseLeave={() => {
           setHover(null);
           dragRef.current = null;
+          setDragging(false);
         }}
       />
       {/* Zoom controls */}

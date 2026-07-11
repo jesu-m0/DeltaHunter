@@ -6,7 +6,6 @@ import {
   clearCanvas,
   drawGrid,
   drawLine,
-  drawFilledLine,
   drawSectorBands,
   drawMarkerLine,
   drawTooltip,
@@ -14,6 +13,7 @@ import {
   getSliceIndices,
   arrayMin,
   arrayMax,
+  hexToRgba,
   COLORS,
   DEFAULT_PADDING,
 } from "@/lib/chartUtils";
@@ -70,6 +70,7 @@ export default function DeltaChart({ chart, sectors, activeSector, markerDist, o
     drawSectorBands(ctx, sectors, activeSector, w, h, pad, xMin, xMax);
 
     // Zero line
+    const plotW = w - pad.left - pad.right;
     const plotH = h - pad.top - pad.bottom;
     const zeroY = pad.top + plotH * (yBound / (2 * yBound));
     ctx.strokeStyle = COLORS.txtDim;
@@ -81,7 +82,34 @@ export default function DeltaChart({ chart, sectors, activeSector, markerDist, o
     ctx.stroke();
     ctx.setLineDash([]);
 
-    drawFilledLine(ctx, dist, delta, w, h, pad, xMin, xMax, -yBound, yBound, COLORS.loss, 0.12);
+    // Fill between the curve and the zero line: red where losing time
+    // (delta > 0), green where gaining (delta < 0).
+    if (dist.length > 1) {
+      const toPx = (x: number) => pad.left + ((x - xMin) / (xMax - xMin)) * plotW;
+      const toPy = (y: number) =>
+        pad.top + plotH - ((y + yBound) / (2 * yBound)) * plotH;
+
+      const fillAgainstZero = (color: string, clipTop: number, clipBottom: number) => {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(pad.left, clipTop, plotW, clipBottom - clipTop);
+        ctx.clip();
+        ctx.beginPath();
+        ctx.moveTo(toPx(dist[0]), zeroY);
+        for (let i = 0; i < dist.length; i++) {
+          ctx.lineTo(toPx(dist[i]), toPy(delta[i]));
+        }
+        ctx.lineTo(toPx(dist[dist.length - 1]), zeroY);
+        ctx.closePath();
+        ctx.fillStyle = hexToRgba(color, 0.15);
+        ctx.fill();
+        ctx.restore();
+      };
+
+      fillAgainstZero(COLORS.loss, pad.top, zeroY);
+      fillAgainstZero(COLORS.gain, zeroY, pad.top + plotH);
+    }
+
     drawLine(ctx, dist, delta, w, h, pad, xMin, xMax, -yBound, yBound, COLORS.loss, 1.5);
 
     if (markerDist !== null) drawMarkerLine(ctx, markerDist, w, h, pad, xMin, xMax);

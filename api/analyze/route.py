@@ -659,14 +659,36 @@ def generate_tip(user_min_speed: float, ref_min_speed: float,
 # Main analysis pipeline
 # ---------------------------------------------------------------------------
 
-def parse_single(buf: bytes, label: str = "File") -> dict:
-    """Parse a single .ld file and return all laps as serializable data."""
+def validate_ld(buf: bytes, label: str = "File"):
+    """Sanity-check that the buffer looks like a MoTeC .ld binary before
+    pointer-chasing it, so wrong uploads get a clear error instead of a
+    cryptic parser failure."""
     stripped = buf.lstrip()[:10]
     if stripped.startswith(b"<?xml") or stripped.startswith(b"<LDXFile"):
         raise ValueError(
             f"{label} file appears to be an .ldx (XML) companion file. "
             "Please upload the .ld telemetry file instead."
         )
+
+    not_ld = f"{label} doesn't look like a MoTeC .ld telemetry file."
+    if len(buf) < 1024:
+        raise ValueError(not_ld)
+    meta_ptr = struct.unpack_from("<I", buf, 8)[0]
+    data_ptr = struct.unpack_from("<I", buf, 12)[0]
+    if meta_ptr == 0 or meta_ptr >= len(buf) or data_ptr >= len(buf):
+        raise ValueError(not_ld)
+    # The first channel-metadata block must itself be in bounds and point to
+    # in-bounds channel data.
+    if meta_ptr + 124 > len(buf):
+        raise ValueError(not_ld)
+    ch_data_ptr = struct.unpack_from("<I", buf, meta_ptr + 8)[0]
+    if ch_data_ptr >= len(buf):
+        raise ValueError(not_ld)
+
+
+def parse_single(buf: bytes, label: str = "File") -> dict:
+    """Parse a single .ld file and return all laps as serializable data."""
+    validate_ld(buf, label)
 
     channels = parse_channels(buf)
     driver, car, track = parse_header(buf)
@@ -742,18 +764,23 @@ def analyze_from_parsed(user_parsed: dict, ref_parsed: dict,
     Supports both old single-lap format and new multi-lap format.
     user_lap_index/ref_lap_index: -1 means use best lap.
     """
-    # Support new multi-lap format
-    if "laps" in user_parsed:
-        idx = user_lap_index if user_lap_index >= 0 else user_parsed.get("best_index", 0)
-        user_lap_data = user_parsed["laps"][idx]
-    else:
-        user_lap_data = user_parsed
+    def pick_lap(parsed: dict, lap_index, label: str) -> dict:
+        if "laps" not in parsed:
+            return parsed
+        laps = parsed["laps"]
+        if not isinstance(laps, list) or len(laps) == 0:
+            raise ValueError(f"{label} session contains no laps")
+        if not isinstance(lap_index, int) or isinstance(lap_index, bool):
+            raise ValueError(f"{label} lap index must be an integer")
+        idx = lap_index if lap_index >= 0 else parsed.get("best_index", 0)
+        if not isinstance(idx, int) or idx < 0 or idx >= len(laps):
+            raise ValueError(
+                f"{label} lap index {idx} is out of range (session has {len(laps)} laps)"
+            )
+        return laps[idx]
 
-    if "laps" in ref_parsed:
-        idx = ref_lap_index if ref_lap_index >= 0 else ref_parsed.get("best_index", 0)
-        ref_lap_data = ref_parsed["laps"][idx]
-    else:
-        ref_lap_data = ref_parsed
+    user_lap_data = pick_lap(user_parsed, user_lap_index, "User")
+    ref_lap_data = pick_lap(ref_parsed, ref_lap_index, "Reference")
 
     user_lap = _lap_from_parsed(user_lap_data)
     ref_lap = _lap_from_parsed(ref_lap_data)
@@ -1111,7 +1138,6 @@ class handler(BaseHTTPRequestHandler):
 
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(json.dumps(result).encode())
 
@@ -1120,16 +1146,15 @@ class handler(BaseHTTPRequestHandler):
         except Exception as e:
             self._error(500, f"Analysis failed: {str(e)}")
 
+    # The API is same-origin (Vercel rewrites), so no CORS headers: other
+    # origins shouldn't be able to consume this endpoint from the browser.
     def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_response(204)
+        self.send_header("Allow", "POST, OPTIONS")
         self.end_headers()
 
     def _error(self, code: int, msg: str):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(json.dumps({"error": msg}).encode())

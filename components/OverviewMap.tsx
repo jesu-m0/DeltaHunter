@@ -22,6 +22,9 @@ export default function OverviewMap({
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Projection from the last draw, reused by the click handler so the two
+  // can't drift apart.
+  const toScreenRef = useRef<((x: number, y: number) => [number, number]) | null>(null);
   const HEIGHT = useChartHeight(360);
 
   const draw = useCallback(() => {
@@ -52,16 +55,7 @@ export default function OverviewMap({
       offX + (x - minX) * scale,
       offY + (maxY - y) * scale,
     ];
-
-    // Find which sector each point belongs to
-    const sectorOf = new Array(dist.length).fill(-1);
-    for (const s of sectors) {
-      for (let i = 0; i < dist.length; i++) {
-        if (dist[i] >= s.start && dist[i] <= s.end) {
-          sectorOf[i] = s.id;
-        }
-      }
-    }
+    toScreenRef.current = toScreen;
 
     // Draw base track (dim)
     ctx.beginPath();
@@ -178,26 +172,13 @@ export default function OverviewMap({
 
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const toScreen = toScreenRef.current;
+    if (!canvas || !toScreen) return;
 
     const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    const mx = (e.clientX - rect.left);
-    const my = (e.clientY - rect.top);
-
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
     const { map_x, map_y, dist } = chart;
-    const pad = 40;
-    const minX = arrayMin(map_x);
-    const maxX = arrayMax(map_x);
-    const minY = arrayMin(map_y);
-    const maxY = arrayMax(map_y);
-    const rangeX = maxX - minX || 1;
-    const rangeY = maxY - minY || 1;
-    const w = canvas.clientWidth;
-    const h = HEIGHT;
-    const scale = Math.min((w - pad * 2) / rangeX, (h - pad * 2) / rangeY);
-    const offX = (w - rangeX * scale) / 2;
-    const offY = (h - rangeY * scale) / 2;
 
     // Find closest sector
     let bestSector: number | null = null;
@@ -205,8 +186,7 @@ export default function OverviewMap({
     for (const s of sectors) {
       for (let i = 0; i < dist.length; i++) {
         if (dist[i] >= s.start && dist[i] <= s.end) {
-          const sx = offX + (map_x[i] - minX) * scale;
-          const sy = offY + (maxY - map_y[i]) * scale;
+          const [sx, sy] = toScreen(map_x[i], map_y[i]);
           const d = Math.sqrt((mx - sx) ** 2 + (my - sy) ** 2);
           if (d < bestDist) {
             bestDist = d;

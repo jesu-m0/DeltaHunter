@@ -45,6 +45,7 @@ export default function AnalysisPage() {
   const setRefLapIndex = useAnalysisStore((s) => s.setRefLapIndex);
   const recompare = useAnalysisStore((s) => s.recompare);
   const comparing = useAnalysisStore((s) => s.comparing);
+  const compareError = useAnalysisStore((s) => s.error);
 
   useEffect(() => {
     if (!data) router.replace("/");
@@ -184,6 +185,9 @@ export default function AnalysisPage() {
             >
               {comparing ? "Comparing..." : "Compare"}
             </button>
+            {compareError && (
+              <p className="w-full text-xs text-loss">{compareError}</p>
+            )}
           </div>
         ) : null}
 
