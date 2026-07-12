@@ -19,6 +19,8 @@ import TelemetryCard from "@/components/TelemetryCard";
 import ControlDock from "@/components/ControlDock";
 import LapSelector from "@/components/LapSelector";
 import Findings from "@/components/Findings";
+import TopLosses from "@/components/TopLosses";
+import SessionStats from "@/components/SessionStats";
 
 function formatLapTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -110,6 +112,13 @@ export default function AnalysisPage() {
       </header>
 
       <div className="max-w-[1600px] mx-auto px-4 py-6 space-y-6 pb-44 sm:pb-24">
+        {/* Prioritized time losses */}
+        <TopLosses
+          sectors={sectors}
+          activeSector={activeSector}
+          onSectorSelect={setActiveSector}
+        />
+
         {/* Top section: Map + Sectors */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-surface rounded-xl border border-border p-4">
@@ -190,6 +199,32 @@ export default function AnalysisPage() {
             )}
           </div>
         ) : null}
+
+        {/* Session stats: consistency + theoretical best */}
+        {parsedUser && parsedRef && (parsedUser.laps.length > 1 || parsedRef.laps.length > 1) && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-surface rounded-xl border border-border p-4">
+              <SessionStats
+                session={parsedUser}
+                label={meta.user_driver}
+                color="user"
+                selectedIndex={userLapIndex >= 0 ? userLapIndex : parsedUser.best_index}
+                onSelectLap={setUserLapIndex}
+                disabled={comparing}
+              />
+            </div>
+            <div className="bg-surface rounded-xl border border-border p-4">
+              <SessionStats
+                session={parsedRef}
+                label={meta.ref_driver}
+                color="ref"
+                selectedIndex={refLapIndex >= 0 ? refLapIndex : parsedRef.best_index}
+                onSelectLap={setRefLapIndex}
+                disabled={comparing}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Sector selector */}
         <SectorButtons

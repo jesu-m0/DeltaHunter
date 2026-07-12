@@ -8,7 +8,7 @@ import os
 
 import pytest
 
-from route import analyze_from_parsed, parse_single, validate_ld
+from route import analyze_from_parsed, generate_tip, parse_single, validate_ld
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 PUBLIC = os.path.join(REPO_ROOT, "public")
@@ -82,6 +82,40 @@ def test_validate_rejects_ldx_xml():
 
 def test_validate_accepts_real_ld():
     validate_ld(read_sample(IMOLA_USER))
+
+
+# ---------------------------------------------------------------------------
+# generate_tip
+# ---------------------------------------------------------------------------
+
+def test_tip_quantifies_early_braking():
+    # User brakes at 500m, reference at 540m -> user brakes 40m earlier
+    tip = generate_tip(120, 128, user_brake_point=500, ref_brake_point=540)
+    assert "braking 40m earlier" in tip
+
+
+def test_tip_quantifies_late_braking():
+    tip = generate_tip(120, 128, user_brake_point=540, ref_brake_point=500)
+    assert "brake 40m later" in tip
+
+
+def test_tip_quantifies_late_throttle():
+    # User reaches full throttle at 650m, reference at 600m -> 50m later
+    tip = generate_tip(120, 128, user_throttle_on=650, ref_throttle_on=600)
+    assert "full throttle 50m later" in tip
+
+
+def test_tip_ignores_small_point_differences():
+    tip = generate_tip(120, 121, user_brake_point=500, ref_brake_point=505,
+                       user_throttle_on=600, ref_throttle_on=603)
+    assert "earlier" not in tip and "later" not in tip
+
+
+def test_tip_handles_missing_points():
+    # Sectors without a detected brake/throttle point must still get a tip
+    tip = generate_tip(120, 128, user_brake_point=None, ref_brake_point=None,
+                       user_throttle_on=None, ref_throttle_on=None)
+    assert tip
 
 
 # ---------------------------------------------------------------------------

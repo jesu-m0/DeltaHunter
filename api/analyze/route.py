@@ -611,48 +611,80 @@ def calc_time_delta(user_speed: np.ndarray, ref_speed: np.ndarray, dist: np.ndar
 # ---------------------------------------------------------------------------
 
 def generate_tip(user_min_speed: float, ref_min_speed: float,
-                  user_trail: float = 0.0, ref_trail: float = 0.0) -> str:
+                  user_trail: float = 0.0, ref_trail: float = 0.0,
+                  user_brake_point=None, ref_brake_point=None,
+                  user_throttle_on=None, ref_throttle_on=None) -> str:
     delta_speed = ref_min_speed - user_min_speed
     trail_diff = ref_trail - user_trail
 
-    trail_tip = ""
+    parts = []
+
+    if delta_speed > 15:
+        parts.append(
+            f"Huge gap: {delta_speed:.0f} kph less minimum speed. "
+            f"You're braking too hard. Try braking a bit earlier with less pressure, "
+            f"and keep some brake while turning (trail braking)."
+        )
+    elif delta_speed > 8:
+        parts.append(
+            f"You lose {delta_speed:.0f} kph at the apex. "
+            f"Brake a bit earlier with less pressure and carry more speed through the corner."
+        )
+    elif delta_speed > 3:
+        parts.append(
+            f"Moderate gap: {delta_speed:.0f} kph. "
+            f"A small braking and line adjustment can fix this."
+        )
+    elif delta_speed > 0:
+        parts.append(
+            f"Minimal difference ({delta_speed:.0f} kph). "
+            f"This sector is pretty good. Focus on other sectors first."
+        )
+    else:
+        parts.append(
+            f"You're faster here by {-delta_speed:.0f} kph! "
+            f"Great job on this corner. Keep it consistent."
+        )
+
+    # Quantified braking-point comparison (distances along the lap, in meters)
+    if user_brake_point is not None and ref_brake_point is not None:
+        brake_delta = ref_brake_point - user_brake_point
+        if brake_delta > 10:
+            parts.append(
+                f"You start braking {brake_delta:.0f}m earlier than the reference — "
+                f"try carrying the brakes deeper into the zone."
+            )
+        elif brake_delta < -10:
+            parts.append(
+                f"You brake {-brake_delta:.0f}m later than the reference — "
+                f"you may be overshooting the entry and compromising the exit."
+            )
+
+    # Quantified throttle-application comparison
+    if user_throttle_on is not None and ref_throttle_on is not None:
+        throttle_delta = user_throttle_on - ref_throttle_on
+        if throttle_delta > 10:
+            parts.append(
+                f"You get back to full throttle {throttle_delta:.0f}m later on exit — "
+                f"prioritise a line that lets you open the throttle sooner."
+            )
+        elif throttle_delta < -10:
+            parts.append(
+                f"You're on full throttle {-throttle_delta:.0f}m earlier on exit than the reference."
+            )
+
     if trail_diff > 20:
-        trail_tip = (
-            f" Reference trails the brake {trail_diff:.0f}% more into the corner. "
+        parts.append(
+            f"Reference trails the brake {trail_diff:.0f}% more into the corner. "
             f"Try maintaining light brake pressure while turning in."
         )
     elif trail_diff < -20:
-        trail_tip = (
-            f" You trail brake more than the reference here — "
-            f"make sure you're not overloading the front tyres."
+        parts.append(
+            "You trail brake more than the reference here — "
+            "make sure you're not overloading the front tyres."
         )
 
-    if delta_speed > 15:
-        return (
-            f"Huge gap: {delta_speed:.0f} kph less minimum speed. "
-            f"You're braking too hard. Try braking a bit earlier with less pressure, "
-            f"and keep some brake while turning (trail braking).{trail_tip}"
-        )
-    elif delta_speed > 8:
-        return (
-            f"You lose {delta_speed:.0f} kph at the apex. "
-            f"Brake a bit earlier with less pressure and carry more speed through the corner.{trail_tip}"
-        )
-    elif delta_speed > 3:
-        return (
-            f"Moderate gap: {delta_speed:.0f} kph. "
-            f"A small braking and line adjustment can fix this.{trail_tip}"
-        )
-    elif delta_speed > 0:
-        return (
-            f"Minimal difference ({delta_speed:.0f} kph). "
-            f"This sector is pretty good. Focus on other sectors first.{trail_tip}"
-        )
-    else:
-        return (
-            f"You're faster here by {-delta_speed:.0f} kph! "
-            f"Great job on this corner. Keep it consistent.{trail_tip}"
-        )
+    return " ".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -915,7 +947,9 @@ def _compare_laps(
         u_throttle_on = throttle_on_point(u_thr_s, user_chart["speed"][idx])
         r_throttle_on = throttle_on_point(r_thr_s, ref_chart["speed"][idx])
 
-        tip = generate_tip(u_min, r_min, u_trail_score, r_trail_score)
+        tip = generate_tip(u_min, r_min, u_trail_score, r_trail_score,
+                           u_brake_point, r_brake_point,
+                           u_throttle_on, r_throttle_on)
         sectors.append({
             "id": i,
             "name": sector_names[i],
