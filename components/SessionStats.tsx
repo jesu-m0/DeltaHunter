@@ -79,7 +79,7 @@ export default function SessionStats({
         ))}
       </div>
 
-      <div className="max-h-48 overflow-y-auto pr-1 space-y-1">
+      <div className="max-h-48 overflow-y-auto p-3 space-y-1">
         {session.laps.map((lap, i) => {
           const isSelected = i === selectedIndex;
           const isValid = stats.validLap[i];
