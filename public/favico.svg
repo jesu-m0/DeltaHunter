@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <circle cx="256" cy="256" r="250" fill="#fff"/>
+  <g
+    transform="translate(256 256) scale(1.18) translate(-200 -162)"
+    fill="rgb(68 153 255)"
+  >
+    <path
+      d="m87.347 290.6 112.65-256.99h6.2996l106.35 256.99zm181.02-15.749-75.04-184.54-81.155 184.54z"
+      stroke="rgb(68 153 255)"
+      stroke-width="36"
+      stroke-linejoin="round"
+      stroke-linecap="round"
+    />
+  </g>
+</svg>

@@ -5,6 +5,10 @@ export const metadata: Metadata = {
   title: "DeltaHunter — Telemetry Comparison for Sim Racing",
   description:
     "Upload two MoTeC .ld telemetry files and instantly see where and why you lose time, corner by corner.",
+  icons: {
+    icon: "/favico.svg",
+    shortcut: "/favico.svg",
+  },
 };
 
 export default function RootLayout({
