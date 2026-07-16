@@ -17,12 +17,12 @@ const DEMOS = [
   {
     label: "Imola — jesu_m0 vs Cavalli",
     user: "/imola/jesu_m0/21022026-130019-jesum0-fw_cupra_tcr_2024-fn_imolalfm.ld",
-    ref: "/imola/cavalli/fn_imola_&_fw_cupra_tcr_2024_&_E. Cavalli_&_stint_3.ld",
+    ref: "/imola/cavalli/fn_imola_%26_fw_cupra_tcr_2024_%26_E.%20Cavalli_%26_stint_3.ld",
   },
   {
     label: "Sepang — jesu_m0 vs Cavalli",
-    user: "/sepang/jesum0/22022026-233806-15  Jesus Moreno-fw_cupra_tcr_2024-acu_sepang.ld",
-    ref: "/sepang/cavalli/acu_sepang_&_fw_cupra_tcr_2024_&_E. Cavalli_&_stint_22.ld",
+    user: "/sepang/jesum0/22022026-233806-15%20%20Jesus%20Moreno-fw_cupra_tcr_2024-acu_sepang.ld",
+    ref: "/sepang/cavalli/acu_sepang_%26_fw_cupra_tcr_2024_%26_E.%20Cavalli_%26_stint_22.ld",
   },
   {
     label: "Imola — jesu_m0 (solo session)",
@@ -32,11 +32,20 @@ const DEMOS = [
 ];
 
 async function fetchAsFile(url: string): Promise<File> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to fetch ${url}`);
-  const blob = await res.blob();
-  const name = url.split("/").pop() ?? "telemetry.ld";
-  return new File([blob], name, { type: "application/octet-stream" });
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const blob = await res.blob();
+    if (!blob.size || blob.size === 0) {
+      throw new Error("Empty response");
+    }
+    const name = url.split("/").pop()?.replace(/%20/g, " ") ?? "telemetry.ld";
+    return new File([blob], name, { type: "application/octet-stream" });
+  } catch (e) {
+    throw new Error(`Failed to fetch: ${e instanceof Error ? e.message : "Unknown error"}`);
+  }
 }
 
 function DropBox({

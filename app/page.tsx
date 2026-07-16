@@ -37,15 +37,39 @@ export default function Home() {
         const gz = await compress(file);
         const form = new FormData();
         form.append("file", gz, file.name);
-        const res = await fetch("/api/analyze/parse", {
-          method: "POST",
-          body: form,
-        });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({ error: "Parse failed" }));
-          throw new Error(body.error || `Parse failed: ${res.status}`);
+        
+        let res;
+        try {
+          res = await fetch("/api/analyze/parse", {
+            method: "POST",
+            body: form,
+          });
+        } catch (e) {
+          throw new Error(`Network error: ${e instanceof Error ? e.message : "Unknown"}`);
         }
-        return res.json();
+        
+        if (!res.ok) {
+          let errorMsg = "Parse failed";
+          try {
+            const contentType = res.headers.get("content-type") || "";
+            if (contentType.includes("application/json")) {
+              const body = await res.json();
+              errorMsg = body.error || `Server error: ${res.status}`;
+            } else {
+              const text = await res.text();
+              errorMsg = text.slice(0, 200) || `HTTP ${res.status}`;
+            }
+          } catch {
+            errorMsg = `Parse failed: HTTP ${res.status}`;
+          }
+          throw new Error(errorMsg);
+        }
+        
+        try {
+          return await res.json();
+        } catch (e) {
+          throw new Error(`Invalid response from server: ${e instanceof Error ? e.message : "Parse error"}`);
+        }
       };
 
       // Parse user session (always)
