@@ -22,8 +22,15 @@ export default function Home() {
 
     try {
       const compress = async (file: File): Promise<Blob> => {
-        const stream = file.stream().pipeThrough(new CompressionStream("gzip"));
-        return new Response(stream).blob();
+        if (typeof CompressionStream === "undefined") {
+          return file;
+        }
+        try {
+          const stream = file.stream().pipeThrough(new CompressionStream("gzip"));
+          return new Response(stream).blob();
+        } catch {
+          return file;
+        }
       };
 
       const parseSession = async (file: File): Promise<ParsedSession> => {
