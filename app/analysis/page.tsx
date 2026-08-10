@@ -62,7 +62,7 @@ export default function AnalysisPage() {
     <main className="min-h-screen bg-bg">
       {/* Header */}
       <header className="border-b border-border">
-        <div className="max-w-[1600px] mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="max-w-[1600px] mx-auto px-4 py-3 sm:py-4 flex flex-wrap items-center justify-between gap-y-2">
           <button
             onClick={() => router.push("/")}
             className="text-xl font-bold tracking-tight hover:opacity-80 transition-opacity"
@@ -71,16 +71,16 @@ export default function AnalysisPage() {
             <span className="text-txt">Hunter</span>
           </button>
 
-          <div className="flex items-center gap-6">
-            <div className="text-right">
-              <div className="text-xs text-txt-dim">
+          <div className="w-full sm:w-auto flex items-center justify-between sm:justify-end gap-3 sm:gap-6">
+            <div className="text-left sm:text-right min-w-0">
+              <div className="text-xs text-txt-dim truncate">
                 {meta.circuit_name || meta.track}
               </div>
-              <div className="text-xs text-txt-dim">{meta.car}</div>
+              <div className="text-xs text-txt-dim truncate">{meta.car}</div>
             </div>
-            <div className="flex gap-4">
+            <div className="flex gap-3 sm:gap-4 shrink-0">
               <div className="text-right">
-                <div className="text-[10px] uppercase text-user/70">
+                <div className="text-[10px] uppercase text-user/70 truncate max-w-[80px] sm:max-w-none">
                   {meta.user_driver}
                 </div>
                 <div className="font-mono text-sm font-semibold text-user">
@@ -88,7 +88,7 @@ export default function AnalysisPage() {
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-[10px] uppercase text-ref/70">
+                <div className="text-[10px] uppercase text-ref/70 truncate max-w-[80px] sm:max-w-none">
                   {meta.ref_driver}
                 </div>
                 <div className="font-mono text-sm font-semibold text-ref">
