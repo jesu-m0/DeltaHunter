@@ -58,3 +58,8 @@ body {
 canvas {
   display: block;
 }
+
+/* Keeps the mobile playback sheet clear of the iOS home indicator. */
+.pb-safe {
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+}

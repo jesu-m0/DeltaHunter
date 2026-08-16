@@ -1,169 +1,24 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import type { ChartData } from "@/lib/types";
+import type { PlaybackApi } from "@/lib/usePlayback";
 
 interface Props {
-  chart: ChartData;
+  pb: PlaybackApi;
   markerDist: number | null;
-  onMarkerPlace: (dist: number | null) => void;
 }
 
-const SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
-
-export default function PlaybackBar({ chart, markerDist, onMarkerPlace }: Props) {
-  const [playing, setPlaying] = useState(false);
-  const [speedIdx, setSpeedIdx] = useState(2); // 1x
-  const rafRef = useRef<number>(0);
-  const lastTimeRef = useRef<number>(0);
-  const distRef = useRef<number>(0);
-
-  const maxDist = chart.dist[chart.dist.length - 1] ?? 0;
-  const minDist = chart.dist[0] ?? 0;
-  const playbackSpeed = SPEEDS[speedIdx];
-
-  // Get the user's speed (kph) at a given distance for real-time playback
-  const getSpeedAtDist = useCallback(
-    (d: number): number => {
-      // Binary-ish search for closest index
-      let lo = 0;
-      let hi = chart.dist.length - 1;
-      while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        if (chart.dist[mid] < d) lo = mid + 1;
-        else hi = mid;
-      }
-      const speed = chart.user_speed[lo] ?? 100;
-      return Math.max(speed, 10); // minimum 10 kph to avoid stalling
-    },
-    [chart]
-  );
-
-  const tick = useCallback(
-    (timestamp: number) => {
-      if (lastTimeRef.current === 0) {
-        lastTimeRef.current = timestamp;
-        rafRef.current = requestAnimationFrame(tick);
-        return;
-      }
-
-      const dtReal = (timestamp - lastTimeRef.current) / 1000; // seconds
-      lastTimeRef.current = timestamp;
-
-      // speed in kph at current position -> m/s
-      const speedKph = getSpeedAtDist(distRef.current);
-      const speedMs = speedKph / 3.6;
-
-      // distance traveled = speed * dt * playback multiplier
-      const dd = speedMs * dtReal * playbackSpeed;
-      distRef.current += dd;
-
-      if (distRef.current >= maxDist) {
-        distRef.current = maxDist;
-        onMarkerPlace(maxDist);
-        setPlaying(false);
-        return;
-      }
-
-      onMarkerPlace(distRef.current);
-      rafRef.current = requestAnimationFrame(tick);
-    },
-    [getSpeedAtDist, maxDist, onMarkerPlace, playbackSpeed]
-  );
-
-  useEffect(() => {
-    if (playing) {
-      lastTimeRef.current = 0;
-      rafRef.current = requestAnimationFrame(tick);
-    }
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    };
-  }, [playing, tick]);
-
-  // Keep distRef in sync with external marker changes
-  useEffect(() => {
-    if (markerDist !== null && !playing) {
-      distRef.current = markerDist;
-    }
-  }, [markerDist, playing]);
-
-  const handlePlay = () => {
-    if (markerDist === null || markerDist >= maxDist - 10) {
-      distRef.current = minDist;
-      onMarkerPlace(minDist);
-    }
-    setPlaying(true);
-  };
-
-  const handlePause = () => {
-    setPlaying(false);
-  };
-
-  const handleStop = () => {
-    setPlaying(false);
-    onMarkerPlace(null);
-    distRef.current = minDist;
-  };
-
-  const handleSkip = (delta: number) => {
-    const current = markerDist ?? minDist;
-    const next = Math.max(minDist, Math.min(maxDist, current + delta));
-    distRef.current = next;
-    onMarkerPlace(next);
-  };
-
-  const handleScrub = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const d = parseFloat(e.target.value);
-    distRef.current = d;
-    onMarkerPlace(d);
-  };
-
-  const progress = markerDist !== null ? ((markerDist - minDist) / (maxDist - minDist)) * 100 : 0;
-
-  // Precompute cumulative elapsed-time at each sample once per chart, so the
-  // playback readout is O(log n) per frame instead of O(n) every render.
-  const cumTime = useMemo(() => {
-    const t = new Array<number>(chart.dist.length);
-    t[0] = 0;
-    for (let i = 1; i < chart.dist.length; i++) {
-      const dd = chart.dist[i] - chart.dist[i - 1];
-      const speed = Math.max(chart.user_speed[i], 10) / 3.6;
-      t[i] = t[i - 1] + dd / speed;
-    }
-    return t;
-  }, [chart]);
-
-  const timeIndexAt = (targetDist: number): number => {
-    let lo = 0;
-    let hi = chart.dist.length - 1;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (chart.dist[mid] < targetDist) lo = mid + 1;
-      else hi = mid;
-    }
-    return lo;
-  };
-
-  const totalTime = cumTime[cumTime.length - 1] ?? 0;
-  const currentTime = markerDist !== null ? cumTime[timeIndexAt(markerDist)] ?? 0 : 0;
-
-  const formatTime = (s: number) => {
-    const m = Math.floor(s / 60);
-    const sec = s % 60;
-    return `${m}:${sec.toFixed(1).padStart(4, "0")}`;
-  };
-
+/** Desktop layout (sm+): every control on a single row. */
+export default function PlaybackBar({ pb, markerDist }: Props) {
   return (
     <div className="w-full min-w-0">
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex items-center gap-3">
         {/* Play/Pause */}
         <button
-          onClick={playing ? handlePause : handlePlay}
+          onClick={pb.playing ? pb.pause : pb.play}
           className="w-8 h-8 flex items-center justify-center rounded-lg bg-user/20 text-user
             hover:bg-user/30 transition-colors"
         >
-          {playing ? (
+          {pb.playing ? (
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
               <rect x="6" y="4" width="4" height="16" rx="1" />
               <rect x="14" y="4" width="4" height="16" rx="1" />
@@ -177,7 +32,7 @@ export default function PlaybackBar({ chart, markerDist, onMarkerPlace }: Props)
 
         {/* Stop */}
         <button
-          onClick={handleStop}
+          onClick={pb.stop}
           className="w-8 h-8 flex items-center justify-center rounded-lg bg-surface2 text-txt-dim
             hover:text-txt transition-colors"
         >
@@ -188,8 +43,8 @@ export default function PlaybackBar({ chart, markerDist, onMarkerPlace }: Props)
 
         {/* Skip back */}
         <button
-          onClick={() => handleSkip(-100)}
-          className="w-8 h-8 hidden sm:flex items-center justify-center rounded-lg bg-surface2 text-txt-dim
+          onClick={() => pb.skip(-100)}
+          className="w-8 h-8 flex items-center justify-center rounded-lg bg-surface2 text-txt-dim
             hover:text-txt transition-colors"
           title="-100m"
         >
@@ -200,8 +55,8 @@ export default function PlaybackBar({ chart, markerDist, onMarkerPlace }: Props)
 
         {/* Skip forward */}
         <button
-          onClick={() => handleSkip(100)}
-          className="w-8 h-8 hidden sm:flex items-center justify-center rounded-lg bg-surface2 text-txt-dim
+          onClick={() => pb.skip(100)}
+          className="w-8 h-8 flex items-center justify-center rounded-lg bg-surface2 text-txt-dim
             hover:text-txt transition-colors"
           title="+100m"
         >
@@ -212,7 +67,7 @@ export default function PlaybackBar({ chart, markerDist, onMarkerPlace }: Props)
 
         {/* Time display */}
         <span className="font-mono text-xs text-txt-dim w-24 text-center">
-          {formatTime(currentTime)} / {formatTime(totalTime)}
+          {pb.formatTime(pb.currentTime)} / {pb.formatTime(pb.totalTime)}
         </span>
 
         {/* Scrub bar */}
@@ -220,16 +75,16 @@ export default function PlaybackBar({ chart, markerDist, onMarkerPlace }: Props)
           <div className="h-1.5 rounded-full bg-surface2 overflow-hidden">
             <div
               className="h-full bg-user/60 rounded-full transition-[width] duration-75"
-              style={{ width: `${progress}%` }}
+              style={{ width: `${pb.progress}%` }}
             />
           </div>
           <input
             type="range"
-            min={minDist}
-            max={maxDist}
+            min={pb.minDist}
+            max={pb.maxDist}
             step={6}
-            value={markerDist ?? minDist}
-            onChange={handleScrub}
+            value={markerDist ?? pb.minDist}
+            onChange={pb.scrub}
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
         </div>
@@ -242,8 +97,8 @@ export default function PlaybackBar({ chart, markerDist, onMarkerPlace }: Props)
         {/* Speed: step slower/faster, each arrow disabled at its limit */}
         <div className="flex items-center gap-0.5">
           <button
-            onClick={() => setSpeedIdx((i) => Math.max(0, i - 1))}
-            disabled={speedIdx === 0}
+            onClick={() => pb.setSpeedIdx((i) => Math.max(0, i - 1))}
+            disabled={pb.speedIdx === 0}
             title="Slower"
             className="w-7 h-8 flex items-center justify-center rounded-lg bg-surface2 text-txt-dim
               hover:text-txt transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-txt-dim"
@@ -253,11 +108,11 @@ export default function PlaybackBar({ chart, markerDist, onMarkerPlace }: Props)
             </svg>
           </button>
           <span className="w-10 text-center font-mono text-xs text-txt tabular-nums">
-            {playbackSpeed}x
+            {pb.playbackSpeed}x
           </span>
           <button
-            onClick={() => setSpeedIdx((i) => Math.min(SPEEDS.length - 1, i + 1))}
-            disabled={speedIdx === SPEEDS.length - 1}
+            onClick={() => pb.setSpeedIdx((i) => Math.min(pb.speedCount - 1, i + 1))}
+            disabled={pb.speedIdx === pb.speedCount - 1}
             title="Faster"
             className="w-7 h-8 flex items-center justify-center rounded-lg bg-surface2 text-txt-dim
               hover:text-txt transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-txt-dim"

@@ -111,7 +111,7 @@ export default function AnalysisPage() {
         </div>
       </header>
 
-      <div className="max-w-[1600px] mx-auto px-4 py-6 space-y-6 pb-44 sm:pb-24">
+      <div className="max-w-[1600px] mx-auto px-4 py-6 space-y-6 pb-24">
         {/* Prioritized time losses */}
         <TopLosses
           sectors={sectors}
