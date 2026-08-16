@@ -10,7 +10,9 @@ import json
 import struct
 import re
 import io
+import os
 import gzip
+import urllib.parse
 import numpy as np
 
 
@@ -1122,7 +1124,102 @@ def _maybe_decompress(data: bytes, max_size: int = 200 * 1024 * 1024) -> bytes:
     return data
 
 
+# ---------------------------------------------------------------------------
+# Demo sessions
+# ---------------------------------------------------------------------------
+
+# Demo telemetry ships with the deployment, so it is read and parsed here rather
+# than downloaded by the browser and uploaded straight back. The round trip cost
+# ~8 MB down plus ~3.4 MB up per demo, which is slow on mobile data and pushed
+# the largest file past the 4.5 MB request limit whenever the browser could not
+# gzip it. Requests carry a demo id only — paths never come from the client.
+
+DEMOS = {
+    "imola-vs-cavalli": {
+        "user": "public/imola/jesu_m0/"
+                "21022026-130019-jesum0-fw_cupra_tcr_2024-fn_imolalfm.ld",
+        "ref": "public/imola/cavalli/"
+               "fn_imola_&_fw_cupra_tcr_2024_&_E. Cavalli_&_stint_3.ld",
+    },
+    "sepang-vs-cavalli": {
+        "user": "public/sepang/jesum0/"
+                "22022026-233806-15  Jesus Moreno-fw_cupra_tcr_2024-acu_sepang.ld",
+        "ref": "public/sepang/cavalli/"
+               "acu_sepang_&_fw_cupra_tcr_2024_&_E. Cavalli_&_stint_22.ld",
+    },
+    "imola-solo": {
+        "user": "public/imola/jesu_m0/"
+                "21022026-130019-jesum0-fw_cupra_tcr_2024-fn_imolalfm.ld",
+        "ref": None,
+    },
+}
+
+# The Python runtime bundles the project's files and resolves relative paths
+# from the project root, but the dev server runs with the repo root as cwd only
+# some of the time, so both bases are tried.
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+
+def _read_demo_file(rel_path: str) -> bytes:
+    tried = []
+    for base in (os.getcwd(), _PROJECT_ROOT):
+        candidate = os.path.abspath(os.path.join(base, rel_path))
+        tried.append(candidate)
+        # rel_path only ever comes from DEMOS, but keep the read inside public/.
+        if not candidate.startswith(os.path.join(os.path.abspath(base), "public")):
+            continue
+        if os.path.isfile(candidate):
+            with open(candidate, "rb") as f:
+                return f.read()
+    raise ValueError(
+        "Demo telemetry is missing from the deployment "
+        f"({os.path.basename(rel_path)}). Looked in: {', '.join(tried)}"
+    )
+
+
+def load_demo(demo_id: str) -> dict:
+    """Parse a bundled demo into the same shape the /parse endpoint returns."""
+    demo = DEMOS.get(demo_id)
+    if demo is None:
+        raise ValueError(
+            f"Unknown demo '{demo_id}'. Available: {', '.join(sorted(DEMOS))}"
+        )
+    return {
+        "user": parse_single(_read_demo_file(demo["user"]), "Demo session"),
+        "ref": (
+            parse_single(_read_demo_file(demo["ref"]), "Demo reference")
+            if demo["ref"]
+            else None
+        ),
+    }
+
+
 class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        try:
+            path, _, query = self.path.partition("?")
+            if not path.rstrip("/").endswith("/demo"):
+                self._error(404, f"Unknown endpoint: {path}")
+                return
+            demo_id = (urllib.parse.parse_qs(query).get("id") or [""])[0]
+            result = load_demo(demo_id)
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            # Output only changes when the parser or the bundled files change,
+            # so let the CDN serve repeat visits.
+            self.send_header(
+                "Cache-Control",
+                "public, max-age=0, s-maxage=86400, stale-while-revalidate=604800",
+            )
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode())
+
+        except ValueError as e:
+            self._error(400, str(e))
+        except Exception as e:
+            self._error(500, f"Demo failed to load: {str(e)}")
+
     def do_POST(self):
         try:
             content_length = int(self.headers.get("Content-Length", 0))
@@ -1184,7 +1281,7 @@ class handler(BaseHTTPRequestHandler):
     # origins shouldn't be able to consume this endpoint from the browser.
     def do_OPTIONS(self):
         self.send_response(204)
-        self.send_header("Allow", "POST, OPTIONS")
+        self.send_header("Allow", "GET, POST, OPTIONS")
         self.end_headers()
 
     def _error(self, code: int, msg: str):

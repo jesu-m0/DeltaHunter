@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { describeNetworkError, describeResponseError, readJson } from "./apiError";
 import type { AnalysisResponse, ParsedSession } from "./types";
 
 /**
@@ -70,20 +71,24 @@ export const useAnalysisStore = create<AnalysisStore>((set, get) => ({
     const { parsedUser, parsedRef, userLapIndex, refLapIndex } = get();
     if (!parsedUser || !parsedRef) return;
     set({ comparing: true, error: null });
+    const step = "Comparing the selected laps";
     try {
-      const res = await fetch("/api/analyze/compare", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_lap: lapPayload(parsedUser, userLapIndex),
-          ref_lap: lapPayload(parsedRef, refLapIndex),
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        throw new Error(body?.error || `Compare failed (${res.status})`);
+      let res: Response;
+      try {
+        res = await fetch("/api/analyze/compare", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_lap: lapPayload(parsedUser, userLapIndex),
+            ref_lap: lapPayload(parsedRef, refLapIndex),
+          }),
+        });
+      } catch (e) {
+        throw new Error(describeNetworkError(e, step));
       }
-      const data: AnalysisResponse = await res.json();
+      if (!res.ok) throw new Error(await describeResponseError(res, step));
+
+      const data = await readJson<AnalysisResponse>(res, step);
       set({ data, activeSector: null, markerDist: null, comparing: false });
     } catch (e) {
       set({

@@ -9,58 +9,18 @@ interface LapFiles {
 
 interface Props {
   onAnalyze: (userFiles: LapFiles, refFiles: LapFiles | null) => void;
+  onDemo: (demoId: string) => Promise<void>;
   loading: boolean;
   error: string | null;
 }
 
+// Ids must match the DEMOS registry in api/analyze/route.py, which owns the
+// file paths. The browser only ever sends the id.
 const DEMOS = [
-  {
-    label: "Imola — jesu_m0 vs Cavalli",
-    user: "/imola/jesu_m0/21022026-130019-jesum0-fw_cupra_tcr_2024-fn_imolalfm.ld",
-    ref: "/imola/cavalli/fn_imola_&_fw_cupra_tcr_2024_&_E. Cavalli_&_stint_3.ld",
-  },
-  {
-    label: "Sepang — jesu_m0 vs Cavalli",
-    user: "/sepang/jesum0/22022026-233806-15  Jesus Moreno-fw_cupra_tcr_2024-acu_sepang.ld",
-    ref: "/sepang/cavalli/acu_sepang_&_fw_cupra_tcr_2024_&_E. Cavalli_&_stint_22.ld",
-  },
-  {
-    label: "Imola — jesu_m0 (solo session)",
-    user: "/imola/jesu_m0/21022026-130019-jesum0-fw_cupra_tcr_2024-fn_imolalfm.ld",
-    ref: null,
-  },
+  { id: "imola-vs-cavalli", label: "Imola — jesu_m0 vs Cavalli" },
+  { id: "sepang-vs-cavalli", label: "Sepang — jesu_m0 vs Cavalli" },
+  { id: "imola-solo", label: "Imola — jesu_m0 (solo session)" },
 ];
-
-async function fetchAsFile(url: string): Promise<File> {
-  try {
-    const absoluteUrl = url.startsWith("/") ? new URL(url, window.location.origin) : new URL(url);
-    const encodedPath = absoluteUrl.pathname
-      .split("/")
-      .map((segment) => {
-        if (!segment) return "";
-        try {
-          return encodeURIComponent(decodeURIComponent(segment));
-        } catch {
-          return encodeURIComponent(segment);
-        }
-      })
-      .join("/");
-    const safeUrl = `${absoluteUrl.origin}${encodedPath}${absoluteUrl.search}${absoluteUrl.hash}`;
-    const res = await fetch(safeUrl, { cache: "no-store" });
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status} fetching ${safeUrl}`);
-    }
-    const blob = await res.blob();
-    if (!blob.size || blob.size === 0) {
-      throw new Error(`Empty response for ${safeUrl}`);
-    }
-    const rawName = absoluteUrl.pathname.split("/").pop() ?? "telemetry.ld";
-    const name = decodeURIComponent(rawName.replace(/\+/g, " "));
-    return new File([blob], name, { type: "application/octet-stream" });
-  } catch (e) {
-    throw new Error(`Failed to fetch: ${e instanceof Error ? e.message : "Unknown error"}`);
-  }
-}
 
 function DropBox({
   label,
@@ -191,31 +151,19 @@ function DropBox({
   );
 }
 
-export default function UploadZone({ onAnalyze, loading, error }: Props) {
+export default function UploadZone({ onAnalyze, onDemo, loading, error }: Props) {
   const [userLd, setUserLd] = useState<File | null>(null);
   const [userLdx, setUserLdx] = useState<File | null>(null);
   const [refLd, setRefLd] = useState<File | null>(null);
   const [refLdx, setRefLdx] = useState<File | null>(null);
   const [loadingDemo, setLoadingDemo] = useState<string | null>(null);
-  const [demoError, setDemoError] = useState<string | null>(null);
 
   const canAnalyze = userLd && !loading;
-  const shownError = error ?? demoError;
 
-  const handleDemo = async (demo: (typeof DEMOS)[number]) => {
-    setLoadingDemo(demo.label);
-    setDemoError(null);
+  const handleDemo = async (demoId: string) => {
+    setLoadingDemo(demoId);
     try {
-      const userFile = await fetchAsFile(demo.user);
-      const refFile = demo.ref ? await fetchAsFile(demo.ref) : null;
-      onAnalyze(
-        { ld: userFile, ldx: null },
-        refFile ? { ld: refFile, ldx: null } : null
-      );
-    } catch (e) {
-      setDemoError(
-        e instanceof Error ? e.message : "Failed to load the demo files"
-      );
+      await onDemo(demoId);
     } finally {
       setLoadingDemo(null);
     }
@@ -262,9 +210,9 @@ export default function UploadZone({ onAnalyze, loading, error }: Props) {
         </p>
       )}
 
-      {shownError && (
-        <div className="mb-4 p-3 rounded-lg bg-loss/10 border border-loss/30 text-loss text-sm">
-          {shownError}
+      {error && (
+        <div className="mb-4 p-3 rounded-lg bg-loss/10 border border-loss/30 text-loss text-sm break-words">
+          {error}
         </div>
       )}
 
@@ -323,13 +271,13 @@ export default function UploadZone({ onAnalyze, loading, error }: Props) {
         <div className="flex flex-wrap justify-center gap-2">
           {DEMOS.map((demo) => (
             <button
-              key={demo.label}
+              key={demo.id}
               disabled={loading || loadingDemo !== null}
-              onClick={() => handleDemo(demo)}
+              onClick={() => handleDemo(demo.id)}
               className="px-3 py-1.5 rounded-lg bg-surface2 border border-border text-xs text-txt-dim
                 hover:text-txt hover:border-user/40 transition-colors disabled:opacity-50"
             >
-              {loadingDemo === demo.label ? "Loading..." : demo.label}
+              {loadingDemo === demo.id ? "Loading..." : demo.label}
             </button>
           ))}
         </div>

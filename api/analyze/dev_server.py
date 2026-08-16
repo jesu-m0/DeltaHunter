@@ -9,16 +9,38 @@ import json
 import sys
 import os
 import traceback
+import urllib.parse
 
 # Add parent dir so we can import route
 sys.path.insert(0, os.path.dirname(__file__))
 from route import (
     analyze, parse_multipart, _maybe_decompress,
-    parse_single, analyze_from_parsed,
+    parse_single, analyze_from_parsed, load_demo,
 )
 
 
 class DevHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        try:
+            path, _, query = self.path.partition("?")
+            if not path.rstrip("/").endswith("/demo"):
+                self._error(404, f"Unknown endpoint: {path}")
+                return
+            demo_id = (urllib.parse.parse_qs(query).get("id") or [""])[0]
+            result = load_demo(demo_id)
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode())
+
+        except ValueError as e:
+            self._error(400, str(e))
+        except Exception as e:
+            traceback.print_exc()
+            self._error(500, f"Demo failed to load: {str(e)}")
+
     def do_POST(self):
         try:
             content_length = int(self.headers.get("Content-Length", 0))
